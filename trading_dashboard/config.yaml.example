@@ -1,0 +1,32 @@
+# Authentication Configuration Template
+# Copy this file to config.yaml and configure your credentials
+#
+# Generate password hash:
+#   python -c "import streamlit_authenticator as stauth; print(stauth.Hasher(['your_password']).generate())"
+#
+# Generate cookie key (64 hex characters):
+#   python -c "import secrets; print(secrets.token_hex(32))"
+
+cookie:
+  expiry_days: 30
+  key: "REPLACE_WITH_64_CHAR_HEX_KEY_FROM_SECRETS_TOKEN_HEX_32"
+  name: "trading_dashboard_auth"
+
+credentials:
+  usernames:
+    admin:
+      email: admin@localhost
+      first_name: Admin
+      last_name: User
+      # Replace with bcrypt hash of your password
+      password: "$2b$12$REPLACE_WITH_HASH_FROM_HASHER"
+      roles:
+        - admin
+    # Add additional users as needed:
+    # trader:
+    #   email: trader@localhost
+    #   first_name: Trader
+    #   last_name: User
+    #   password: "$2b$12$HASH_HERE"
+    #   roles:
+    #     - trader

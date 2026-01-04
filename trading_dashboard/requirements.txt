@@ -1,0 +1,28 @@
+# Streamlit Dashboard Dependencies
+# Install with: pip install -r requirements.txt
+
+# Core framework
+streamlit>=1.37.0
+
+# HTTP client with async support
+httpx>=0.27.0
+
+# Charting
+plotly>=5.24.0
+streamlit-lightweight-charts>=0.7.20
+
+# Data tables
+streamlit-aggrid>=0.3.4
+
+# Authentication
+streamlit-authenticator>=0.3.2
+
+# Data manipulation
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Performance
+orjson>=3.9.0
+
+# Configuration
+pyyaml>=6.0
