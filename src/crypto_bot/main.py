@@ -183,12 +183,58 @@ def setup_signal_handlers(shutdown: GracefulShutdown) -> None:
 # Strategy Factory
 # =============================================================================
 
+# Multi-pair grid configurations
+GRID_CONFIGS = [
+    {
+        "symbol": "BTC/USDT",
+        "lower_price": Decimal("88000"),
+        "upper_price": Decimal("94000"),
+        "num_grids": 10,
+        "total_investment": Decimal("300"),
+    },
+    {
+        "symbol": "ETH/USDT",
+        "lower_price": Decimal("2900"),
+        "upper_price": Decimal("3400"),
+        "num_grids": 10,
+        "total_investment": Decimal("200"),
+    },
+    {
+        "symbol": "SOL/USDT",
+        "lower_price": Decimal("120"),
+        "upper_price": Decimal("150"),
+        "num_grids": 8,
+        "total_investment": Decimal("150"),
+    },
+]
+
+
+def create_grid_strategies(settings: AppSettings) -> list[GridTradingStrategy]:
+    """Create grid trading strategies for multiple pairs.
+
+    Args:
+        settings: Application settings.
+
+    Returns:
+        List of configured GridTradingStrategy instances.
+    """
+    strategies = []
+    for cfg in GRID_CONFIGS:
+        config = GridConfig(
+            name=f"grid_{cfg['symbol'].replace('/', '_')}",
+            symbol=cfg["symbol"],
+            lower_price=cfg["lower_price"],
+            upper_price=cfg["upper_price"],
+            num_grids=cfg["num_grids"],
+            total_investment=cfg["total_investment"],
+            dry_run=settings.trading.dry_run,
+        )
+        strategies.append(GridTradingStrategy(config))
+    return strategies
+
 
 def create_grid_strategy(settings: AppSettings) -> GridTradingStrategy:
-    """Create a grid trading strategy from settings.
-
-    Creates a default grid configuration based on settings.
-    In production, this would load from a config file.
+    """Create a single grid trading strategy (for backward compatibility).
 
     Args:
         settings: Application settings.
@@ -196,24 +242,63 @@ def create_grid_strategy(settings: AppSettings) -> GridTradingStrategy:
     Returns:
         Configured GridTradingStrategy.
     """
-    # Default grid configuration
-    # These would typically come from a config file
+    # Use the first config that matches the symbol, or default to BTC
+    for cfg in GRID_CONFIGS:
+        if cfg["symbol"] == settings.trading.symbol:
+            config = GridConfig(
+                name="grid",
+                symbol=cfg["symbol"],
+                lower_price=cfg["lower_price"],
+                upper_price=cfg["upper_price"],
+                num_grids=cfg["num_grids"],
+                total_investment=cfg["total_investment"],
+                dry_run=settings.trading.dry_run,
+            )
+            return GridTradingStrategy(config)
+
+    # Default fallback
     config = GridConfig(
         name="grid",
         symbol=settings.trading.symbol,
-        lower_price=Decimal("40000"),  # Example: $40,000
-        upper_price=Decimal("50000"),  # Example: $50,000
-        num_grids=20,
-        total_investment=Decimal("1000"),  # Example: $1,000
+        lower_price=Decimal("88000"),
+        upper_price=Decimal("94000"),
+        num_grids=10,
+        total_investment=Decimal("500"),
         dry_run=settings.trading.dry_run,
     )
-
     return GridTradingStrategy(config)
 
 
 # =============================================================================
 # Main Entry Point
 # =============================================================================
+
+
+async def run_single_bot(
+    settings: AppSettings,
+    strategy: GridTradingStrategy,
+    exchange: BinanceAdapter,
+    database: Database,
+    logger: Any,
+) -> None:
+    """Run a single trading bot for one strategy."""
+    bot = (
+        BotBuilder()
+        .with_settings(settings)
+        .with_exchange(exchange)
+        .with_database(database)
+        .with_strategy(strategy)
+        .build()
+    )
+
+    logger.info(
+        "bot_initialized",
+        strategy=strategy.name,
+        symbol=strategy.symbol,
+        dry_run=settings.trading.dry_run,
+    )
+
+    await bot.start()
 
 
 async def main() -> int:
@@ -237,8 +322,6 @@ async def main() -> int:
         settings.trading.dry_run = True
     if args.log_level:
         settings.log_level = args.log_level
-    if args.symbol:
-        settings.trading.symbol = args.symbol
 
     # Initialize logging
     configure_logging(
@@ -250,48 +333,46 @@ async def main() -> int:
     # Display startup banner
     display_banner(settings, settings.trading.dry_run)
 
-    # Set up graceful shutdown
-    shutdown = GracefulShutdown()
-
     try:
-        # Set up signal handlers (Unix only)
-        if sys.platform != "win32":
-            setup_signal_handlers(shutdown)
-
-        # Create components
+        # Create shared components
         exchange = BinanceAdapter(settings.exchange)
         database = Database(settings.database)
-        strategy = create_grid_strategy(settings)
 
-        # Build and start bot
-        bot = (
-            BotBuilder()
-            .with_settings(settings)
-            .with_exchange(exchange)
-            .with_database(database)
-            .with_strategy(strategy)
-            .build()
-        )
-
-        shutdown.set_bot(bot)
+        # Check if running single or multi-pair mode
+        if args.symbol:
+            # Single pair mode (backward compatible)
+            settings.trading.symbol = args.symbol
+            strategy = create_grid_strategy(settings)
+            strategies = [strategy]
+        else:
+            # Multi-pair mode
+            strategies = create_grid_strategies(settings)
 
         logger.info(
-            "bot_initialized",
-            strategy=strategy.name,
-            symbol=strategy.symbol,
+            "starting_multi_pair_bot",
+            pairs=[s.symbol for s in strategies],
             dry_run=settings.trading.dry_run,
         )
 
-        # Start the bot (runs until shutdown)
-        if sys.platform == "win32":
-            # On Windows, handle Ctrl+C differently
-            try:
-                await bot.start()
-            except KeyboardInterrupt:
-                logger.info("keyboard_interrupt")
-                await bot.stop()
-        else:
-            await bot.start()
+        # Connect exchange once (shared across all strategies)
+        await exchange.connect()
+        await database.connect()
+
+        # Run all strategies concurrently
+        tasks = []
+        for strategy in strategies:
+            task = asyncio.create_task(
+                run_single_bot(settings, strategy, exchange, database, logger)
+            )
+            tasks.append(task)
+
+        # Wait for all bots (they run forever until interrupted)
+        try:
+            await asyncio.gather(*tasks)
+        except KeyboardInterrupt:
+            logger.info("keyboard_interrupt")
+            for task in tasks:
+                task.cancel()
 
         return 0
 

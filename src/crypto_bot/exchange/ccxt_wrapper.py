@@ -77,7 +77,13 @@ class CCXTExchange(BaseExchange):
                     "enableRateLimit": True,
                     "rateLimit": self._settings.rate_limit_ms,
                     "timeout": self._settings.timeout_ms,
-                    "options": {"defaultType": "spot"},
+                    "options": {
+                        "defaultType": "spot",
+                        # Auto-sync with exchange server time to avoid timestamp errors
+                        "adjustForTimeDifference": True,
+                        # Increase receive window tolerance (max 60000ms)
+                        "recvWindow": 60000,
+                    },
                 }
             )
 
