@@ -234,3 +234,60 @@ class MockExchange(BaseExchange):
         else:
             self._balances[base] = self._balances.get(base, Decimal("0")) - fill
             self._balances[quote] = self._balances.get(quote, Decimal("0")) + (fill * price)
+
+    # Additional test helper methods
+    def set_price(self, symbol: str, price: Decimal) -> None:
+        """Set price for a symbol.
+
+        Args:
+            symbol: Trading pair symbol.
+            price: New price.
+        """
+        self._tickers[symbol] = Ticker(
+            symbol=symbol,
+            bid=price - Decimal("0.5"),
+            ask=price + Decimal("0.5"),
+            last=price,
+            timestamp=datetime.now(UTC),
+        )
+
+    def set_balance(self, currency: str, amount: Decimal) -> None:
+        """Set balance for a currency.
+
+        Args:
+            currency: Currency code.
+            amount: New balance.
+        """
+        self._balances[currency] = amount
+
+    def get_balance(self, currency: str) -> Decimal:
+        """Get balance for a currency.
+
+        Args:
+            currency: Currency code.
+
+        Returns:
+            Balance amount.
+        """
+        return self._balances.get(currency, Decimal("0"))
+
+    def reset(self) -> None:
+        """Reset mock state."""
+        self._orders.clear()
+        self._order_counter = 0
+        self._fail_next_call = None
+
+    @property
+    def order_count(self) -> int:
+        """Get total number of orders created."""
+        return self._order_counter
+
+    @property
+    def open_orders(self) -> list[Order]:
+        """Get all open orders."""
+        return [o for o in self._orders.values() if o.status == OrderStatus.OPEN]
+
+    @property
+    def closed_orders(self) -> list[Order]:
+        """Get all closed orders."""
+        return [o for o in self._orders.values() if o.status == OrderStatus.CLOSED]

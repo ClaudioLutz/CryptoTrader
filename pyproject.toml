@@ -44,6 +44,12 @@ dev = [
     "black>=24.0.0",
     "ruff>=0.1.0",
     "mypy>=1.8.0",
+    "bandit>=1.7.0",
+    "safety>=2.3.0",
+    "pre-commit>=3.5.0",
+]
+secrets = [
+    "keyring>=24.0.0",
 ]
 backtesting = [
     "pandas>=2.0.0",
@@ -52,6 +58,9 @@ backtesting = [
 
 [project.scripts]
 crypto-bot = "crypto_bot.main:cli"
+crypto-bot-secrets = "crypto_bot.utils.secrets:secrets_cli"
+crypto-bot-security = "crypto_bot.utils.security_check:security_check_cli"
+crypto-bot-audit = "crypto_bot.utils.audit:verify_audit_cli"
 
 [project.urls]
 Repository = "https://github.com/yourusername/crypto-trading-bot"

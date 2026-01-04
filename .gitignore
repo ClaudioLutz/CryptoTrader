@@ -82,5 +82,7 @@ Thumbs.db
 config/*.yaml
 !config/*.example.yaml
 /data/
-.env.example
-nul
+
+# Secrets (extra patterns)
+secrets.yaml
+secrets.json
