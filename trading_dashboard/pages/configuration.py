@@ -113,16 +113,35 @@ with st.form("grid_config_form"):
     )
 
     if submitted:
-        st.session_state.pending_config = {
-            "symbol": symbol,
-            "lower_price": lower_price,
-            "upper_price": upper_price,
-            "num_grids": num_grids,
-            "total_investment": total_investment,
-            "spacing_type": spacing_type,
-            "grid_step": grid_step,
-            "investment_per_grid": investment_per_grid,
-        }
+        # Validate inputs before proceeding
+        validation_errors = []
+
+        if upper_price <= lower_price:
+            validation_errors.append("Upper price must be greater than lower price")
+
+        if num_grids < 2:
+            validation_errors.append("Number of grids must be at least 2")
+
+        if total_investment <= 0:
+            validation_errors.append("Total investment must be greater than 0")
+
+        if lower_price <= 0:
+            validation_errors.append("Lower price must be greater than 0")
+
+        if validation_errors:
+            for error in validation_errors:
+                st.error(f"❌ {error}")
+        else:
+            st.session_state.pending_config = {
+                "symbol": symbol,
+                "lower_price": lower_price,
+                "upper_price": upper_price,
+                "num_grids": num_grids,
+                "total_investment": total_investment,
+                "spacing_type": spacing_type,
+                "grid_step": grid_step,
+                "investment_per_grid": investment_per_grid,
+            }
 
 st.divider()
 
@@ -301,9 +320,20 @@ def confirm_trading_toggle():
     col1, col2 = st.columns(2)
     with col1:
         if st.button(f"Yes, {action}", type="primary"):
-            st.success(f"Trading {action.lower()}d (API call would go here)")
-            st.session_state.pending_trading_toggle = None
-            st.rerun()
+            try:
+                response = get_http_client().post(
+                    "/api/trading/toggle",
+                    json={"enabled": st.session_state.pending_trading_toggle},
+                )
+                if response.status_code == 200:
+                    st.success(f"Trading {action.lower()}d successfully!")
+                else:
+                    st.error(f"Failed to {action.lower()} trading: {response.text}")
+            except Exception as e:
+                st.error(f"Error: {e}")
+            finally:
+                st.session_state.pending_trading_toggle = None
+                st.rerun()
 
     with col2:
         if st.button("Cancel"):
@@ -322,9 +352,17 @@ def confirm_restart():
     col1, col2 = st.columns(2)
     with col1:
         if st.button("Confirm Restart", type="primary"):
-            st.success("Strategy restarted (API call would go here)")
-            st.session_state.pending_restart = False
-            st.rerun()
+            try:
+                response = get_http_client().post("/api/strategy/restart")
+                if response.status_code == 200:
+                    st.success("Strategy restarted successfully!")
+                else:
+                    st.error(f"Failed to restart strategy: {response.text}")
+            except Exception as e:
+                st.error(f"Error: {e}")
+            finally:
+                st.session_state.pending_restart = False
+                st.rerun()
 
     with col2:
         if st.button("Cancel"):
@@ -340,9 +378,17 @@ def confirm_clear_orders():
     col1, col2 = st.columns(2)
     with col1:
         if st.button("Yes, Clear All", type="primary"):
-            st.success("All orders cleared (API call would go here)")
-            st.session_state.pending_clear_orders = False
-            st.rerun()
+            try:
+                response = get_http_client().post("/api/orders/cancel-all")
+                if response.status_code == 200:
+                    st.success("All orders cleared successfully!")
+                else:
+                    st.error(f"Failed to clear orders: {response.text}")
+            except Exception as e:
+                st.error(f"Error: {e}")
+            finally:
+                st.session_state.pending_clear_orders = False
+                st.rerun()
 
     with col2:
         if st.button("Cancel"):

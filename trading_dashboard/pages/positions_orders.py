@@ -5,6 +5,14 @@ import pandas as pd
 
 from components.api_client import fetch_positions, fetch_orders, get_http_client
 
+# Try to import AgGrid, fallback to basic dataframe if not available
+try:
+    from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
+
+    AGGRID_AVAILABLE = True
+except ImportError:
+    AGGRID_AVAILABLE = False
+
 
 st.title("📋 Positions & Orders")
 
@@ -37,7 +45,7 @@ st.divider()
 
 @st.fragment(run_every="3s")
 def positions_table():
-    """Auto-refreshing positions table."""
+    """Auto-refreshing positions table with AgGrid for sorting."""
     data = fetch_positions()
     positions = data.get("positions", [])
 
@@ -62,21 +70,72 @@ def positions_table():
         st.info("No positions match the selected filters")
         return
 
-    # Display with formatting
-    st.dataframe(
-        df,
-        column_config={
-            "symbol": st.column_config.TextColumn("Symbol", width="medium"),
-            "side": st.column_config.TextColumn("Side", width="small"),
-            "amount": st.column_config.NumberColumn("Amount", format="%.4f"),
-            "entry_price": st.column_config.NumberColumn("Entry", format="$%.2f"),
-            "current_price": st.column_config.NumberColumn("Current", format="$%.2f"),
-            "pnl": st.column_config.NumberColumn("P&L", format="$%.2f"),
-            "pnl_pct": st.column_config.NumberColumn("P&L %", format="%.2f%%"),
-        },
-        hide_index=True,
-        use_container_width=True,
-    )
+    if AGGRID_AVAILABLE:
+        # AgGrid for sorting/filtering
+        gb = GridOptionsBuilder.from_dataframe(df)
+        gb.configure_default_column(sortable=True, filterable=True, resizable=True)
+
+        # P&L conditional styling
+        pnl_style = JsCode(
+            """
+            function(params) {
+                if (params.value > 0) return {'color': '#26a69a', 'fontWeight': 'bold'};
+                if (params.value < 0) return {'color': '#ef5350', 'fontWeight': 'bold'};
+                return {};
+            }
+            """
+        )
+
+        if "pnl" in df.columns:
+            gb.configure_column("pnl", cellStyle=pnl_style, type=["numericColumn"])
+        if "pnl_pct" in df.columns:
+            gb.configure_column("pnl_pct", cellStyle=pnl_style, type=["numericColumn"])
+
+        # Side styling
+        side_style = JsCode(
+            """
+            function(params) {
+                if (params.value === 'LONG' || params.value === 'long') {
+                    return {'backgroundColor': 'rgba(38,166,154,0.2)', 'color': '#26a69a'};
+                }
+                if (params.value === 'SHORT' || params.value === 'short') {
+                    return {'backgroundColor': 'rgba(239,83,80,0.2)', 'color': '#ef5350'};
+                }
+                return {};
+            }
+            """
+        )
+
+        if "side" in df.columns:
+            gb.configure_column("side", cellStyle=side_style)
+
+        # Default sort by P&L descending
+        gb.configure_column("pnl", sort="desc")
+
+        AgGrid(
+            df,
+            gridOptions=gb.build(),
+            allow_unsafe_jscode=True,
+            theme="balham-dark",
+            height=300,
+            fit_columns_on_grid_load=True,
+        )
+    else:
+        # Fallback to basic dataframe
+        st.dataframe(
+            df,
+            column_config={
+                "symbol": st.column_config.TextColumn("Symbol", width="medium"),
+                "side": st.column_config.TextColumn("Side", width="small"),
+                "amount": st.column_config.NumberColumn("Amount", format="%.4f"),
+                "entry_price": st.column_config.NumberColumn("Entry", format="$%.2f"),
+                "current_price": st.column_config.NumberColumn("Current", format="$%.2f"),
+                "pnl": st.column_config.NumberColumn("P&L", format="$%.2f"),
+                "pnl_pct": st.column_config.NumberColumn("P&L %", format="%.2f%%"),
+            },
+            hide_index=True,
+            use_container_width=True,
+        )
 
 
 positions_table()

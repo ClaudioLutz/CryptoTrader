@@ -12,7 +12,9 @@ from components.api_client import (
     fetch_orders,
     fetch_ohlcv,
     fetch_status,
+    fetch_equity,
 )
+from components.state import get_state
 
 
 st.title("Trading Dashboard")
@@ -88,10 +90,30 @@ def calculate_pnl_from_trades(trades: list, current_price: float = 0) -> dict:
 
 
 # =============================================================================
-# Refresh Controls - Manual refresh to avoid constant flickering
+# Refresh Controls and Symbol Selection
 # =============================================================================
 
-col_refresh, col_status = st.columns([1, 3])
+state = get_state()
+
+col_symbol, col_refresh, col_status = st.columns([1, 1, 2])
+
+with col_symbol:
+    # Get symbols from strategies if available, else use defaults
+    strategies_data = fetch_strategies()
+    available_symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]  # Defaults
+    strategy_symbols = [s.get("symbol") for s in strategies_data.get("strategies", []) if s.get("symbol")]
+    if strategy_symbols:
+        available_symbols = list(set(strategy_symbols + available_symbols))
+
+    selected_symbol = st.selectbox(
+        "Symbol",
+        available_symbols,
+        index=available_symbols.index(state.selected_symbol) if state.selected_symbol in available_symbols else 0,
+        key="dashboard_symbol",
+        label_visibility="collapsed",
+    )
+    state.selected_symbol = selected_symbol
+
 with col_refresh:
     if st.button("Refresh Data", type="primary", use_container_width=True):
         st.cache_data.clear()
@@ -101,44 +123,165 @@ with col_status:
     st.caption(f"Last updated: {datetime.now().strftime('%H:%M:%S')}")
 
 # =============================================================================
-# Live Metrics Panel - Using st.empty() for smoother updates
+# Portfolio Summary (All Pairs Aggregate)
 # =============================================================================
 
-# Create placeholder containers that will be updated in place
-metrics_container = st.container()
+st.subheader("Portfolio Summary (All Pairs)")
 
 
 @st.fragment(run_every="10s")
-def live_metrics_panel():
-    """Auto-refreshing metrics panel with reduced flicker."""
-    # Fetch all data at once
+def portfolio_summary():
+    """Aggregate P&L across all trading pairs."""
+    trades_data = fetch_trades()
     strategies_data = fetch_strategies()
     orders_data = fetch_orders()
-    trades_data = fetch_trades()
-    ohlcv_data = fetch_ohlcv(symbol="BTC/USDT", timeframe="1m", limit=1)
 
+    all_trades = trades_data.get("trades", [])
     strategies = strategies_data.get("strategies", [])
     orders = orders_data.get("orders", [])
-    trades = trades_data.get("trades", [])
 
-    # Get current price from latest candle
+    # Group trades by symbol
+    symbols = set(t.get("symbol") for t in all_trades if t.get("symbol"))
+    if not symbols:
+        symbols = {"BTC/USDT"}  # Default
+
+    # Calculate P&L per symbol with proper current prices
+    total_realized = 0.0
+    total_unrealized = 0.0
+    total_cycles = 0
+    total_buy_count = 0
+    total_sell_count = 0
+    symbol_summaries = []
+
+    for symbol in symbols:
+        symbol_trades = [t for t in all_trades if t.get("symbol") == symbol]
+        if not symbol_trades:
+            continue
+
+        # Get current price for this symbol
+        ohlcv_data = fetch_ohlcv(symbol=symbol, timeframe="1m", limit=1)
+        ohlcv = ohlcv_data.get("ohlcv", [])
+        current_price = ohlcv[-1]["close"] if ohlcv else 0
+
+        # Calculate P&L for this symbol
+        pnl = calculate_pnl_from_trades(symbol_trades, current_price)
+
+        total_realized += pnl["realized_pnl"]
+        total_unrealized += pnl["unrealized_pnl"]
+        total_cycles += pnl["cycles"]
+        total_buy_count += pnl["buy_count"]
+        total_sell_count += pnl["sell_count"]
+
+        symbol_summaries.append({
+            "symbol": symbol,
+            "realized": pnl["realized_pnl"],
+            "unrealized": pnl["unrealized_pnl"],
+            "total": pnl["total_pnl"],
+            "cycles": pnl["cycles"],
+        })
+
+    total_pnl = total_realized + total_unrealized
+
+    # Display aggregate metrics
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        st.metric(
+            "Total P&L (All Pairs)",
+            f"${total_pnl:,.2f}",
+            f"{total_cycles} cycles",
+            delta_color="normal" if total_pnl >= 0 else "inverse",
+            border=True,
+        )
+
+    with col2:
+        st.metric(
+            "Realized P&L",
+            f"${total_realized:,.2f}",
+            f"{total_sell_count} sells",
+            delta_color="normal" if total_realized >= 0 else "inverse",
+            border=True,
+        )
+
+    with col3:
+        st.metric(
+            "Unrealized P&L",
+            f"${total_unrealized:,.2f}",
+            f"{len(symbols)} pairs",
+            delta_color="normal" if total_unrealized >= 0 else "inverse",
+            border=True,
+        )
+
+    with col4:
+        total_orders = len(orders)
+        buy_orders = len([o for o in orders if o.get("side", "").lower() == "buy"])
+        sell_orders = len([o for o in orders if o.get("side", "").lower() == "sell"])
+        st.metric(
+            "Open Orders",
+            f"{total_orders}",
+            f"{buy_orders} buy / {sell_orders} sell",
+            border=True,
+        )
+
+    # Per-symbol breakdown table
+    if symbol_summaries:
+        st.caption("**P&L by Symbol:**")
+        cols = st.columns(len(symbol_summaries))
+        for i, summary in enumerate(sorted(symbol_summaries, key=lambda x: x["total"], reverse=True)):
+            with cols[i % len(cols)]:
+                color = "green" if summary["total"] >= 0 else "red"
+                st.markdown(
+                    f"**{summary['symbol']}**: "
+                    f"<span style='color:{color}'>${summary['total']:,.2f}</span>",
+                    unsafe_allow_html=True,
+                )
+
+
+portfolio_summary()
+
+st.divider()
+
+# =============================================================================
+# Selected Symbol Details
+# =============================================================================
+
+st.subheader(f"Selected: {state.selected_symbol}")
+
+
+@st.fragment(run_every="10s")
+def selected_symbol_metrics():
+    """Metrics for the currently selected symbol."""
+    current_symbol = get_state().selected_symbol
+
+    # Fetch data for selected symbol
+    trades_data = fetch_trades()
+    orders_data = fetch_orders()
+    ohlcv_data = fetch_ohlcv(symbol=current_symbol, timeframe="1m", limit=1)
+
+    all_trades = trades_data.get("trades", [])
+    orders = orders_data.get("orders", [])
+
+    # Filter trades for selected symbol
+    symbol_trades = [t for t in all_trades if t.get("symbol") == current_symbol]
+
+    # Get current price
     ohlcv = ohlcv_data.get("ohlcv", [])
     current_price = ohlcv[-1]["close"] if ohlcv else 0
 
-    # Count buy/sell orders from actual orders data
-    buy_orders = len([o for o in orders if o.get("side", "").lower() == "buy"])
-    sell_orders = len([o for o in orders if o.get("side", "").lower() == "sell"])
+    # Filter orders for selected symbol
+    symbol_orders = [o for o in orders if o.get("symbol") == current_symbol]
+    buy_orders = len([o for o in symbol_orders if o.get("side", "").lower() == "buy"])
+    sell_orders = len([o for o in symbol_orders if o.get("side", "").lower() == "sell"])
 
-    # Calculate P&L from actual Binance trades
-    pnl_data = calculate_pnl_from_trades(trades, current_price)
+    # Calculate P&L for selected symbol
+    pnl_data = calculate_pnl_from_trades(symbol_trades, current_price)
 
-    # First row: P&L metrics
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
         total_pnl = pnl_data["total_pnl"]
         st.metric(
-            "Total P&L",
+            f"{current_symbol} P&L",
             f"${total_pnl:,.2f}",
             f"{pnl_data['cycles']} cycles",
             delta_color="normal" if total_pnl >= 0 else "inverse",
@@ -148,7 +291,7 @@ def live_metrics_panel():
     with col2:
         realized = pnl_data["realized_pnl"]
         st.metric(
-            "Realized P&L",
+            "Realized",
             f"${realized:,.2f}",
             f"{pnl_data['sell_count']} sells",
             delta_color="normal" if realized >= 0 else "inverse",
@@ -158,10 +301,12 @@ def live_metrics_panel():
     with col3:
         unrealized = pnl_data["unrealized_pnl"]
         holdings = pnl_data["holdings"]
+        # Determine the asset name from symbol
+        asset = current_symbol.split("/")[0] if "/" in current_symbol else "units"
         st.metric(
-            "Unrealized P&L",
+            "Unrealized",
             f"${unrealized:,.2f}",
-            f"{holdings:.6f} BTC" if holdings > 0 else "No holdings",
+            f"{holdings:.6f} {asset}" if holdings > 0 else "No holdings",
             delta_color="normal" if unrealized >= 0 else "inverse",
             border=True,
         )
@@ -177,26 +322,25 @@ def live_metrics_panel():
             border=True,
         )
 
-    # Second row: Order counts
+    # Second row: orders for this symbol
     col5, col6, col7, col8 = st.columns(4)
 
     with col5:
-        st.metric("Active Strategies", len(strategies), border=True)
-
-    with col6:
         st.metric("Buy Orders", buy_orders, border=True)
 
-    with col7:
+    with col6:
         st.metric("Sell Orders", sell_orders, border=True)
 
+    with col7:
+        total_symbol_trades = pnl_data["buy_count"] + pnl_data["sell_count"]
+        st.metric("Total Trades", total_symbol_trades, border=True)
+
     with col8:
-        total_trades = pnl_data["buy_count"] + pnl_data["sell_count"]
-        st.metric("Total Trades", total_trades, border=True)
+        avg_cost_display = pnl_data["avg_cost"]
+        st.metric("Avg Cost", f"${avg_cost_display:,.2f}" if avg_cost_display > 0 else "N/A", border=True)
 
 
-# Render the metrics panel
-with metrics_container:
-    live_metrics_panel()
+selected_symbol_metrics()
 
 st.divider()
 
@@ -356,11 +500,11 @@ def render_price_chart_with_orders(
 col_chart, col_trades = st.columns([2, 1])
 
 with col_chart:
-    st.subheader("Price Chart")
+    st.subheader(f"Price Chart ({state.selected_symbol})")
     # Fetch data for chart (cached, so won't cause flicker)
     status_data = fetch_status()
     ohlcv_data = fetch_ohlcv(
-        symbol="BTC/USDT", timeframe="15m", limit=96
+        symbol=state.selected_symbol, timeframe="15m", limit=96
     )  # 24 hours of 15m candles
     orders_data = fetch_orders()
     trades_data = fetch_trades()
@@ -402,6 +546,138 @@ with col_trades:
             )
     else:
         st.info("No trades yet")
+
+# =============================================================================
+# Equity Curve (Static - refreshes with page)
+# =============================================================================
+
+st.divider()
+st.subheader("Equity Curve")
+
+
+def render_equity_curve():
+    """Render equity curve with drawdown overlay."""
+    equity_data = fetch_equity()
+    data = equity_data.get("data", [])
+
+    if equity_data.get("error"):
+        st.warning(f"Could not fetch equity data: {equity_data['error']}")
+        return
+
+    if not data:
+        st.info("No equity history available yet. Start trading to see your portfolio growth.")
+        return
+
+    df = pd.DataFrame(data)
+
+    # Ensure we have the required columns
+    if "timestamp" not in df.columns or "equity" not in df.columns:
+        st.info("Equity data format not available")
+        return
+
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+
+    # Calculate drawdown if not provided
+    if "drawdown" not in df.columns:
+        df["peak"] = df["equity"].cummax()
+        df["drawdown"] = (df["equity"] - df["peak"]) / df["peak"] * 100
+
+    fig = go.Figure()
+
+    # Add equity line
+    fig.add_trace(
+        go.Scatter(
+            x=df["timestamp"],
+            y=df["equity"],
+            mode="lines",
+            name="Portfolio Value",
+            line=dict(color="#26a69a", width=2),
+            fill="tozeroy",
+            fillcolor="rgba(38,166,154,0.1)",
+        )
+    )
+
+    # Add peak equity line
+    if "peak" in df.columns:
+        fig.add_trace(
+            go.Scatter(
+                x=df["timestamp"],
+                y=df["peak"],
+                mode="lines",
+                name="Peak Value",
+                line=dict(color="rgba(255,255,255,0.3)", width=1, dash="dot"),
+            )
+        )
+
+    # Add drawdown on secondary y-axis
+    fig.add_trace(
+        go.Scatter(
+            x=df["timestamp"],
+            y=df["drawdown"],
+            mode="lines",
+            name="Drawdown %",
+            line=dict(color="#ef5350", width=1),
+            fill="tozeroy",
+            fillcolor="rgba(239,83,80,0.1)",
+            yaxis="y2",
+        )
+    )
+
+    fig.update_layout(
+        title="Portfolio Equity & Drawdown",
+        yaxis=dict(
+            title="Portfolio Value ($)",
+            titlefont=dict(color="#26a69a"),
+            tickfont=dict(color="#26a69a"),
+            tickformat="$,.0f",
+        ),
+        yaxis2=dict(
+            title="Drawdown (%)",
+            titlefont=dict(color="#ef5350"),
+            tickfont=dict(color="#ef5350"),
+            overlaying="y",
+            side="right",
+            tickformat=".1f",
+            range=[min(df["drawdown"].min() * 1.2, -1), 0],
+        ),
+        height=350,
+        template="plotly_dark",
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+        ),
+        margin=dict(l=0, r=60, t=40, b=0),
+        hovermode="x unified",
+    )
+
+    st.plotly_chart(fig, use_container_width=True, key="equity_curve")
+
+    # Summary metrics below chart
+    if not df.empty:
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            current_equity = df["equity"].iloc[-1]
+            st.metric("Current Equity", f"${current_equity:,.2f}")
+
+        with col2:
+            peak_equity = df["equity"].max()
+            st.metric("Peak Equity", f"${peak_equity:,.2f}")
+
+        with col3:
+            max_dd = df["drawdown"].min()
+            st.metric("Max Drawdown", f"{max_dd:.2f}%")
+
+        with col4:
+            if len(df) > 1:
+                total_return = (df["equity"].iloc[-1] / df["equity"].iloc[0] - 1) * 100
+                st.metric("Total Return", f"{total_return:+.2f}%")
+
+
+render_equity_curve()
 
 # =============================================================================
 # Strategy Performance (Single fragment with longer interval)

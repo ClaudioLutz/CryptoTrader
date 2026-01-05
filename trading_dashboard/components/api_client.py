@@ -1,11 +1,15 @@
 """API client for backend communication using httpx."""
 
-import asyncio
+import logging
 import os
 from typing import Any
 
 import httpx
 import streamlit as st
+
+# Configure logging for API errors
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 # Backend API base URL - configurable via environment variable
 API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8080")
@@ -228,11 +232,16 @@ def _parse_response(response: httpx.Response | Exception, default: Any) -> Any:
         Parsed JSON or default value
     """
     if isinstance(response, Exception):
+        logger.warning(f"API request failed with exception: {response}")
         return default
     try:
         response.raise_for_status()
         return response.json()
-    except Exception:
+    except httpx.HTTPStatusError as e:
+        logger.warning(f"API returned error status {e.response.status_code}: {e.response.text[:200]}")
+        return default
+    except Exception as e:
+        logger.warning(f"Failed to parse API response: {e}")
         return default
 
 
@@ -240,10 +249,30 @@ def _parse_response(response: httpx.Response | Exception, default: Any) -> Any:
 def get_all_data() -> dict[str, Any]:
     """Cached wrapper for batch fetch.
 
+    Uses synchronous calls to avoid asyncio.run() conflicts
+    when an event loop is already running (common in Streamlit).
+
     Returns:
         dict: Combined data from all endpoints
     """
-    return asyncio.run(_fetch_all_dashboard_data())
+    # Use synchronous client to avoid asyncio.run() conflicts
+    client = get_http_client()
+
+    def safe_get(endpoint: str, default: dict) -> dict:
+        try:
+            response = client.get(endpoint)
+            response.raise_for_status()
+            return response.json()
+        except Exception:
+            return default
+
+    return {
+        "trades": safe_get("/api/trades", {"trades": []}),
+        "positions": safe_get("/api/positions", {"positions": []}),
+        "pnl": safe_get("/api/pnl", {"total": 0, "unrealized": 0}),
+        "equity": safe_get("/api/equity", {"data": []}),
+        "status": safe_get("/api/status", {"running": False}),
+    }
 
 
 # =============================================================================

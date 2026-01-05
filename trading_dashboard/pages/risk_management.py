@@ -230,9 +230,18 @@ def confirm_reset_cb():
     col1, col2 = st.columns(2)
     with col1:
         if st.button("Yes, Reset", type="primary"):
-            st.success("Circuit breaker reset (API call would go here)")
-            st.session_state.pending_reset_cb = False
-            st.rerun()
+            try:
+                from components.api_client import get_http_client
+                response = get_http_client().post("/api/risk/reset-circuit-breaker")
+                if response.status_code == 200:
+                    st.success("Circuit breaker reset successfully!")
+                else:
+                    st.error(f"Failed to reset circuit breaker: {response.text}")
+            except Exception as e:
+                st.error(f"Error resetting circuit breaker: {e}")
+            finally:
+                st.session_state.pending_reset_cb = False
+                st.rerun()
 
     with col2:
         if st.button("Cancel"):
@@ -251,9 +260,18 @@ def confirm_emergency_stop():
     col1, col2 = st.columns(2)
     with col1:
         if st.button("CONFIRM EMERGENCY STOP", type="primary"):
-            st.error("Emergency stop executed (API call would go here)")
-            st.session_state.pending_emergency_stop = False
-            st.rerun()
+            try:
+                from components.api_client import get_http_client
+                response = get_http_client().post("/api/risk/emergency-stop")
+                if response.status_code == 200:
+                    st.error("🛑 Emergency stop executed! All orders cancelled, trading disabled.")
+                else:
+                    st.error(f"Failed to execute emergency stop: {response.text}")
+            except Exception as e:
+                st.error(f"Error executing emergency stop: {e}")
+            finally:
+                st.session_state.pending_emergency_stop = False
+                st.rerun()
 
     with col2:
         if st.button("Cancel"):
@@ -266,8 +284,17 @@ if st.session_state.get("pending_reset_cb"):
     confirm_reset_cb()
 
 if st.session_state.get("pending_reset_daily"):
-    st.success("Daily counters reset (API call would go here)")
-    st.session_state.pending_reset_daily = False
+    try:
+        from components.api_client import get_http_client
+        response = get_http_client().post("/api/risk/reset-daily-counters")
+        if response.status_code == 200:
+            st.success("Daily counters reset successfully!")
+        else:
+            st.error(f"Failed to reset daily counters: {response.text}")
+    except Exception as e:
+        st.error(f"Error resetting daily counters: {e}")
+    finally:
+        st.session_state.pending_reset_daily = False
 
 if st.session_state.get("pending_emergency_stop"):
     confirm_emergency_stop()
