@@ -3,7 +3,7 @@
 import streamlit as st
 import pandas as pd
 
-from components.api_client import fetch_positions, get_http_client
+from components.api_client import fetch_positions, fetch_orders, get_http_client
 
 
 st.title("📋 Positions & Orders")
@@ -93,8 +93,14 @@ st.subheader("Pending Orders")
 @st.fragment(run_every="3s")
 def orders_table():
     """Auto-refreshing orders table."""
-    data = fetch_positions()
-    orders = data.get("pending_orders", [])
+    # Get symbol filter value
+    selected_symbol = None if symbol_filter == "All" else symbol_filter
+    data = fetch_orders(selected_symbol)
+    orders = data.get("orders", [])
+
+    if data.get("error"):
+        st.error(f"Failed to fetch orders: {data['error']}")
+        return
 
     if not orders:
         st.info("No pending orders")
@@ -102,17 +108,31 @@ def orders_table():
 
     df = pd.DataFrame(orders)
 
-    # Add cancel button column
+    # Apply side filter
+    if side_filter != "All" and "side" in df.columns:
+        df = df[df["side"].str.upper() == side_filter.upper()]
+
+    if df.empty:
+        st.info("No orders match the selected filters")
+        return
+
+    # Show order count
+    buy_orders = len(df[df["side"].str.lower() == "buy"]) if "side" in df.columns else 0
+    sell_orders = len(df[df["side"].str.lower() == "sell"]) if "side" in df.columns else 0
+    st.caption(f"**{len(df)}** pending orders ({buy_orders} buy, {sell_orders} sell)")
+
+    # Display with formatting
     st.dataframe(
         df,
         column_config={
-            "order_id": st.column_config.TextColumn("Order ID", width="medium"),
+            "id": st.column_config.TextColumn("Order ID", width="medium"),
             "symbol": st.column_config.TextColumn("Symbol", width="medium"),
             "side": st.column_config.TextColumn("Side", width="small"),
             "type": st.column_config.TextColumn("Type", width="small"),
             "price": st.column_config.NumberColumn("Price", format="$%.2f"),
-            "amount": st.column_config.NumberColumn("Amount", format="%.4f"),
-            "filled": st.column_config.NumberColumn("Filled", format="%.4f"),
+            "amount": st.column_config.NumberColumn("Amount", format="%.6f"),
+            "filled": st.column_config.NumberColumn("Filled", format="%.6f"),
+            "remaining": st.column_config.NumberColumn("Remaining", format="%.6f"),
             "status": st.column_config.TextColumn("Status", width="small"),
         },
         hide_index=True,

@@ -71,9 +71,12 @@ class HealthCheckServer:
         # Dashboard API endpoints
         self._app.router.add_get("/api/trades", self._trades_handler)
         self._app.router.add_get("/api/positions", self._positions_handler)
+        self._app.router.add_get("/api/orders", self._orders_handler)
         self._app.router.add_get("/api/pnl", self._pnl_handler)
         self._app.router.add_get("/api/equity", self._equity_handler)
         self._app.router.add_get("/api/status", self._status_handler)
+        self._app.router.add_get("/api/strategies", self._strategies_handler)
+        self._app.router.add_get("/api/ohlcv", self._ohlcv_handler)
 
     def set_bot(self, bot: Any) -> None:
         """Set reference to trading bot for status checks.
@@ -253,10 +256,10 @@ class HealthCheckServer:
 
     # Dashboard API handlers
     async def _trades_handler(self, request: web.Request) -> web.Response:
-        """Get recent trades."""
-        if not self._database:
+        """Get recent trades from exchange."""
+        if not self._bot:
             return web.json_response(
-                {"error": "Database not configured"},
+                {"error": "Bot not initialized"},
                 status=503,
             )
 
@@ -264,33 +267,55 @@ class HealthCheckServer:
         symbol = request.query.get("symbol")
 
         try:
-            from crypto_bot.data.persistence import TradeRepository
+            trades_list = []
 
-            async with self._database.session() as session:
-                repo = TradeRepository(session)
-                trades = await repo.get_trade_history(
-                    symbol=symbol,
-                    limit=limit,
-                )
+            # Get exchange from bot
+            exchange = getattr(self._bot, "_exchange", None)
+            if not exchange:
+                return web.json_response({"trades": []})
 
-            return web.json_response({
-                "trades": [
-                    {
-                        "id": str(t.id),
-                        "symbol": t.symbol,
-                        "side": t.side,
-                        "amount": str(t.amount),
-                        "open_rate": str(t.open_rate),
-                        "close_rate": str(t.close_rate) if t.close_rate else None,
-                        "profit": str(t.profit) if t.profit else None,
-                        "profit_pct": str(t.profit_pct) if t.profit_pct else None,
-                        "open_date": t.open_date.isoformat() if t.open_date else None,
-                        "close_date": t.close_date.isoformat() if t.close_date else None,
-                        "status": t.status,
-                    }
-                    for t in trades
-                ]
-            })
+            # Get all strategies to query their symbols
+            if hasattr(self._bot, "get_all_strategies"):
+                strategies = self._bot.get_all_strategies()
+            elif hasattr(self._bot, "_strategy"):
+                strategies = [self._bot._strategy] if self._bot._strategy else []
+            else:
+                strategies = []
+
+            # Fetch trades from exchange for each symbol
+            symbols_queried = set()
+            for strategy in strategies:
+                strat_symbol = getattr(strategy, "symbol", None)
+                if not strat_symbol or strat_symbol in symbols_queried:
+                    continue
+                if symbol and strat_symbol != symbol:
+                    continue
+
+                symbols_queried.add(strat_symbol)
+
+                try:
+                    # Fetch recent trades from exchange
+                    my_trades = await exchange.fetch_my_trades(strat_symbol, limit=limit)
+                    for trade in my_trades:
+                        trades_list.append({
+                            "id": trade.id,
+                            "order_id": trade.order_id,
+                            "symbol": trade.symbol,
+                            "side": trade.side.value if hasattr(trade.side, "value") else str(trade.side),
+                            "amount": str(trade.amount),
+                            "price": str(trade.price),
+                            "cost": str(trade.cost) if trade.cost else None,
+                            "fee": str(trade.fee) if trade.fee else None,
+                            "timestamp": trade.timestamp.isoformat() if trade.timestamp else None,
+                        })
+                except Exception as e:
+                    logger.warning("fetch_trades_error", symbol=strat_symbol, error=str(e))
+
+            # Sort by timestamp descending
+            trades_list.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+
+            return web.json_response({"trades": trades_list[:limit]})
+
         except Exception as e:
             logger.error("trades_api_error", error=str(e))
             return web.json_response(
@@ -465,6 +490,172 @@ class HealthCheckServer:
                 status=500,
             )
 
+    async def _orders_handler(self, request: web.Request) -> web.Response:
+        """Get pending orders from the exchange."""
+        if not self._bot:
+            return web.json_response(
+                {"error": "Bot not initialized"},
+                status=503,
+            )
+
+        symbol = request.query.get("symbol")
+
+        try:
+            orders_list = []
+
+            # Get exchange from bot
+            exchange = getattr(self._bot, "_exchange", None)
+            if not exchange:
+                return web.json_response({"orders": []})
+
+            # Get all strategies to query their symbols
+            if hasattr(self._bot, "get_all_strategies"):
+                strategies = self._bot.get_all_strategies()
+            elif hasattr(self._bot, "_strategy"):
+                strategies = [self._bot._strategy] if self._bot._strategy else []
+            else:
+                strategies = []
+
+            # Fetch open orders for each strategy's symbol
+            symbols_queried = set()
+            for strategy in strategies:
+                strat_symbol = getattr(strategy, "symbol", None)
+                if not strat_symbol or strat_symbol in symbols_queried:
+                    continue
+                if symbol and strat_symbol != symbol:
+                    continue
+
+                symbols_queried.add(strat_symbol)
+
+                try:
+                    open_orders = await exchange.fetch_open_orders(strat_symbol)
+                    for order in open_orders:
+                        orders_list.append({
+                            "id": order.id,
+                            "symbol": order.symbol,
+                            "side": order.side.value if hasattr(order.side, "value") else str(order.side),
+                            "type": order.order_type.value if hasattr(order.order_type, "value") else str(order.order_type),
+                            "price": str(order.price) if order.price else None,
+                            "amount": str(order.amount),
+                            "filled": str(order.filled),
+                            "remaining": str(order.remaining),
+                            "status": order.status.value if hasattr(order.status, "value") else str(order.status),
+                            "timestamp": order.timestamp.isoformat() if order.timestamp else None,
+                        })
+                except Exception as e:
+                    logger.warning("fetch_orders_error", symbol=strat_symbol, error=str(e))
+
+            return web.json_response({"orders": orders_list})
+
+        except Exception as e:
+            logger.error("orders_api_error", error=str(e))
+            return web.json_response(
+                {"error": str(e)},
+                status=500,
+            )
+
+    async def _strategies_handler(self, request: web.Request) -> web.Response:
+        """Get all strategies with their statistics."""
+        if not self._bot:
+            return web.json_response(
+                {"error": "Bot not initialized"},
+                status=503,
+            )
+
+        try:
+            strategies_data = []
+
+            # Get all strategies
+            if hasattr(self._bot, "get_all_strategies"):
+                strategies = self._bot.get_all_strategies()
+            elif hasattr(self._bot, "_strategy"):
+                strategies = [self._bot._strategy] if self._bot._strategy else []
+            else:
+                strategies = []
+
+            for strategy in strategies:
+                strat_info = {
+                    "name": getattr(strategy, "name", "unknown"),
+                    "symbol": getattr(strategy, "symbol", "unknown"),
+                }
+
+                # Get strategy statistics if available
+                if hasattr(strategy, "get_statistics"):
+                    stats = strategy.get_statistics()
+                    strat_info["statistics"] = {
+                        "total_profit": str(stats.total_profit),
+                        "total_fees": str(stats.total_fees),
+                        "completed_cycles": stats.completed_cycles,
+                        "active_buy_orders": stats.active_buy_orders,
+                        "active_sell_orders": stats.active_sell_orders,
+                    }
+
+                # Get grid config if it's a grid strategy
+                if hasattr(strategy, "_config"):
+                    config = strategy._config
+                    strat_info["config"] = {
+                        "lower_price": str(getattr(config, "lower_price", 0)),
+                        "upper_price": str(getattr(config, "upper_price", 0)),
+                        "num_grids": getattr(config, "num_grids", 0),
+                        "total_investment": str(getattr(config, "total_investment", 0)),
+                    }
+
+                strategies_data.append(strat_info)
+
+            return web.json_response({"strategies": strategies_data})
+
+        except Exception as e:
+            logger.error("strategies_api_error", error=str(e))
+            return web.json_response(
+                {"error": str(e)},
+                status=500,
+            )
+
+    async def _ohlcv_handler(self, request: web.Request) -> web.Response:
+        """Get OHLCV candlestick data from exchange."""
+        if not self._bot:
+            return web.json_response(
+                {"error": "Bot not initialized"},
+                status=503,
+            )
+
+        symbol = request.query.get("symbol", "BTC/USDT")
+        timeframe = request.query.get("timeframe", "1h")
+        limit = int(request.query.get("limit", "100"))
+
+        try:
+            exchange = getattr(self._bot, "_exchange", None)
+            if not exchange:
+                return web.json_response({"ohlcv": []})
+
+            # Fetch OHLCV data from exchange
+            ohlcv_data = await exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
+
+            # Convert to JSON-serializable format
+            candles = []
+            for candle in ohlcv_data:
+                candles.append({
+                    "timestamp": candle.timestamp.isoformat(),
+                    "open": float(candle.open),
+                    "high": float(candle.high),
+                    "low": float(candle.low),
+                    "close": float(candle.close),
+                    "volume": float(candle.volume),
+                })
+
+            return web.json_response({
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "ohlcv": candles,
+            })
+
+        except Exception as e:
+            logger.error("ohlcv_api_error", error=str(e))
+            return web.json_response(
+                {"error": str(e)},
+                status=500,
+            )
+
     async def _status_handler(self, request: web.Request) -> web.Response:
         """Get comprehensive bot status."""
         status: dict[str, Any] = {
@@ -475,13 +666,29 @@ class HealthCheckServer:
                     datetime.utcnow() - self._last_heartbeat
                 ).total_seconds(),
             },
+            # Default risk management fields for dashboard
+            "ws_connected": False,
+            "trading_enabled": False,
+            "db_connected": self._database is not None,
+            "circuit_breaker_active": False,
+            "current_drawdown": 0,
+            "max_drawdown_limit": 10,
+            "daily_loss": 0,
+            "daily_loss_limit": 1000,
+            "consecutive_losses": 0,
+            "max_consecutive_losses": 5,
+            "peak_equity": 0,
+            "circuit_breaker_events": [],
         }
 
         if self._bot:
+            is_running = getattr(self._bot, "_running", False)
             status["bot"] = {
-                "running": getattr(self._bot, "_running", False),
+                "running": is_running,
                 "dry_run": getattr(self._bot, "_dry_run", True),
             }
+            # Trading is enabled if bot is running
+            status["trading_enabled"] = is_running
 
             # Strategy info
             if hasattr(self._bot, "_strategy") and self._bot._strategy:
@@ -497,22 +704,86 @@ class HealthCheckServer:
                         "total_profit": str(stats.total_profit),
                         "completed_cycles": stats.completed_cycles,
                     }
+                    # Grid stats for dashboard
+                    status["grid_stats"] = {
+                        "completed_cycles": stats.completed_cycles,
+                        "total_profit": float(stats.total_profit),
+                        "active_levels": stats.active_buy_orders + stats.active_sell_orders,
+                        "total_levels": 0,  # Will be set from config
+                        "avg_profit_per_cycle": float(stats.total_profit / stats.completed_cycles) if stats.completed_cycles > 0 else 0,
+                    }
+
+                # Grid config from strategy
+                if hasattr(strategy, "_config"):
+                    config = strategy._config
+                    lower = float(getattr(config, "lower_price", 0))
+                    upper = float(getattr(config, "upper_price", 0))
+                    num_grids = getattr(config, "num_grids", 0)
+                    total_investment = float(getattr(config, "total_investment", 0))
+                    grid_step = (upper - lower) / num_grids if num_grids > 0 else 0
+
+                    status["grid_config"] = {
+                        "symbol": getattr(strategy, "symbol", "BTC/USDT"),
+                        "lower_price": lower,
+                        "upper_price": upper,
+                        "num_grids": num_grids,
+                        "grid_step": grid_step,
+                        "total_investment": total_investment,
+                        "investment_per_grid": total_investment / num_grids if num_grids > 0 else 0,
+                        "spacing_type": getattr(config, "spacing_type", "arithmetic") if hasattr(config, "spacing_type") else "arithmetic",
+                    }
+                    # Update total_levels in grid_stats
+                    if "grid_stats" in status:
+                        status["grid_stats"]["total_levels"] = num_grids
+
+                # Grid levels status (for table display)
+                if hasattr(strategy, "_grid_levels"):
+                    pending_levels = []
+                    filled_levels = []
+                    for level in strategy._grid_levels:
+                        price = float(level.price)
+                        if level.buy_order_id or level.sell_order_id:
+                            pending_levels.append(round(price, 2))
+                    status["pending_levels"] = pending_levels
+                    status["filled_levels"] = filled_levels
 
             # Exchange info
             if hasattr(self._bot, "_exchange"):
+                exchange = self._bot._exchange
+                is_connected = getattr(exchange, "_exchange", None) is not None
                 status["exchange"] = {
-                    "connected": True,
-                    "name": getattr(self._bot._exchange, "name", "unknown"),
+                    "connected": is_connected,
+                    "name": getattr(exchange, "_settings", {}).name if hasattr(exchange, "_settings") else "unknown",
                 }
+                # WebSocket connectivity = exchange is connected
+                status["ws_connected"] = is_connected
 
-            # Risk info
+            # Risk info from risk manager
             if hasattr(self._bot, "_risk_manager") and self._bot._risk_manager:
                 risk = self._bot._risk_manager
-                status["risk"] = {
-                    "trading_allowed": getattr(risk, "is_trading_allowed", True),
-                }
+                status["trading_enabled"] = getattr(risk, "is_trading_allowed", True)
+
+                # Get circuit breaker state
+                if hasattr(risk, "_circuit_breaker"):
+                    cb = risk._circuit_breaker
+                    status["circuit_breaker_active"] = not getattr(cb, "is_trading_allowed", True)
+                    if hasattr(cb, "_state"):
+                        state = cb._state
+                        status["consecutive_losses"] = getattr(state, "consecutive_losses", 0)
+                    if hasattr(cb, "_config"):
+                        config = cb._config
+                        status["max_consecutive_losses"] = getattr(config, "max_consecutive_losses", 5)
+
+                # Get drawdown tracker state
+                if hasattr(risk, "_drawdown_tracker"):
+                    dd = risk._drawdown_tracker
+                    status["current_drawdown"] = float(getattr(dd, "current_drawdown_pct", 0))
+                    status["peak_equity"] = float(getattr(dd, "peak_equity", 0))
+                    if hasattr(dd, "_config"):
+                        status["max_drawdown_limit"] = float(getattr(dd._config, "max_drawdown_pct", 10))
+
                 if hasattr(risk, "get_risk_metrics"):
-                    status["risk"]["metrics"] = risk.get_risk_metrics()
+                    status["risk_metrics"] = risk.get_risk_metrics()
         else:
             status["bot"] = {"running": False}
 

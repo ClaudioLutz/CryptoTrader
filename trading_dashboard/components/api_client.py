@@ -132,6 +132,61 @@ def fetch_health() -> dict[str, Any]:
         return {"healthy": False, "error": str(e)}
 
 
+@st.cache_data(ttl=3)
+def fetch_orders(symbol: str | None = None) -> dict[str, Any]:
+    """Fetch pending orders from exchange (3s cache).
+
+    Args:
+        symbol: Optional symbol filter
+
+    Returns:
+        dict: Orders data or error fallback
+    """
+    try:
+        params = {"symbol": symbol} if symbol else {}
+        response = get_http_client().get("/api/orders", params=params)
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPError as e:
+        return {"orders": [], "error": str(e)}
+
+
+@st.cache_data(ttl=5)
+def fetch_strategies() -> dict[str, Any]:
+    """Fetch all strategies with statistics (5s cache).
+
+    Returns:
+        dict: Strategies data or error fallback
+    """
+    try:
+        response = get_http_client().get("/api/strategies")
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPError as e:
+        return {"strategies": [], "error": str(e)}
+
+
+@st.cache_data(ttl=30)
+def fetch_ohlcv(symbol: str = "BTC/USDT", timeframe: str = "1h", limit: int = 100) -> dict[str, Any]:
+    """Fetch OHLCV candlestick data (30s cache).
+
+    Args:
+        symbol: Trading pair symbol
+        timeframe: Candle timeframe (1m, 5m, 15m, 1h, 4h, 1d)
+        limit: Number of candles to fetch
+
+    Returns:
+        dict: OHLCV data or error fallback
+    """
+    try:
+        params = {"symbol": symbol, "timeframe": timeframe, "limit": limit}
+        response = get_http_client().get("/api/ohlcv", params=params)
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPError as e:
+        return {"ohlcv": [], "error": str(e)}
+
+
 # =============================================================================
 # Batch Fetching for Dashboard Initialization
 # =============================================================================

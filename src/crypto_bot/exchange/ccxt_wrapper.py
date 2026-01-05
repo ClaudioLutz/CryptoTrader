@@ -239,6 +239,36 @@ class CCXTExchange(BaseExchange):
         except ccxt.BaseError as e:
             raise ExchangeError(f"Failed to fetch OHLCV: {e}") from e
 
+    @retry_with_backoff(max_retries=3, base_delay=1.0)
+    async def fetch_my_trades(
+        self,
+        symbol: str,
+        limit: int = 100,
+    ) -> list["Trade"]:
+        """Get recent trades for a symbol from exchange."""
+        from crypto_bot.exchange.base_exchange import Trade
+
+        try:
+            raw_trades = await self.exchange.fetch_my_trades(symbol, limit=limit)
+            trades = []
+            for t in raw_trades:
+                trades.append(Trade(
+                    id=str(t.get("id", "")),
+                    order_id=str(t.get("order")) if t.get("order") else None,
+                    symbol=t.get("symbol", symbol),
+                    side=OrderSide(t.get("side", "buy")),
+                    amount=Decimal(str(t.get("amount", 0))),
+                    price=Decimal(str(t.get("price", 0))),
+                    cost=Decimal(str(t.get("cost", 0))),
+                    fee=Decimal(str(t.get("fee", {}).get("cost", 0))) if t.get("fee") else None,
+                    timestamp=datetime.fromtimestamp(t.get("timestamp", 0) / 1000, tz=UTC),
+                ))
+            return trades
+        except ccxt.BadSymbol as e:
+            raise InvalidOrderError(f"Invalid symbol: {symbol}") from e
+        except ccxt.BaseError as e:
+            raise ExchangeError(f"Failed to fetch trades: {e}") from e
+
     def _prepare_order_params(
         self,
         symbol: str,

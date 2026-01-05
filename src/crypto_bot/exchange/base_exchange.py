@@ -82,6 +82,21 @@ class OHLCV:
     volume: Decimal
 
 
+@dataclass(frozen=True)
+class Trade:
+    """Immutable trade data from exchange."""
+
+    id: str
+    order_id: str | None
+    symbol: str
+    side: OrderSide
+    amount: Decimal
+    price: Decimal
+    cost: Decimal
+    fee: Decimal | None
+    timestamp: datetime
+
+
 class ExchangeError(Exception):
     """Base exception for exchange errors."""
 
@@ -257,6 +272,25 @@ class BaseExchange(ABC):
 
         Returns:
             List of OHLCV candle data, oldest first.
+
+        Raises:
+            ExchangeError: If the request fails.
+        """
+
+    @abstractmethod
+    async def fetch_my_trades(
+        self,
+        symbol: str,
+        limit: int = 100,
+    ) -> list[Trade]:
+        """Get recent trades for a symbol.
+
+        Args:
+            symbol: Trading pair symbol.
+            limit: Maximum number of trades to return.
+
+        Returns:
+            List of Trade objects, most recent first.
 
         Raises:
             ExchangeError: If the request fails.

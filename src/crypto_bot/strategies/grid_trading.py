@@ -248,6 +248,17 @@ class GridStatistics:
         return self.total_profit - self.total_fees
 
 
+@dataclass
+class GridStrategyStats:
+    """Strategy statistics for API exposure."""
+
+    total_profit: Decimal
+    total_fees: Decimal
+    completed_cycles: int
+    active_buy_orders: int
+    active_sell_orders: int
+
+
 class GridTradingStrategy:
     """Grid trading strategy implementation.
 
@@ -299,6 +310,30 @@ class GridTradingStrategy:
     def statistics(self) -> GridStatistics:
         """Get trading statistics."""
         return self._stats
+
+    def get_statistics(self) -> "GridStrategyStats":
+        """Get strategy statistics for API exposure.
+
+        Returns:
+            GridStrategyStats with profit, cycles, and order counts.
+        """
+        # Count active buy/sell orders from grid levels
+        buy_orders = sum(
+            1 for level in self._grid_levels
+            if level.buy_order_id is not None
+        )
+        sell_orders = sum(
+            1 for level in self._grid_levels
+            if level.sell_order_id is not None
+        )
+
+        return GridStrategyStats(
+            total_profit=self._stats.total_profit,
+            total_fees=self._stats.total_fees,
+            completed_cycles=self._stats.completed_cycles,
+            active_buy_orders=buy_orders,
+            active_sell_orders=sell_orders,
+        )
 
     @property
     def active_order_count(self) -> int:
