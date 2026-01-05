@@ -110,6 +110,44 @@ crypto-bot --dry-run --log-level DEBUG
 crypto-bot -c config/config.yaml
 ```
 
+## Live Trading
+
+To run with real trades, omit the `--dry-run` flag and set `TRADING__DRY_RUN=false` in your `.env`:
+
+```bash
+# Live trading on testnet (recommended first step)
+crypto-bot --symbol BTC/USDT
+
+# Live trading on mainnet (real money!)
+# Ensure EXCHANGE__TESTNET=false in .env
+crypto-bot --symbol BTC/USDT
+```
+
+### Pre-Flight Checklist
+
+Before running live, verify:
+
+- [ ] Tested extensively in dry-run mode
+- [ ] Tested on testnet with test funds
+- [ ] API key has **NO withdrawal permissions**
+- [ ] IP whitelist configured on exchange
+- [ ] Risk parameters set appropriately:
+  - `RISK__MAX_DAILY_LOSS_PCT` (default: 5%)
+  - `RISK__MAX_DRAWDOWN_PCT` (default: 15%)
+  - `RISK__MAX_CONSECUTIVE_LOSSES` (default: 5)
+- [ ] Alerting configured (Telegram/Discord) for trade notifications
+- [ ] Stop-loss and circuit breaker tested
+- [ ] Sufficient balance for grid strategy + reserves
+- [ ] Monitoring dashboard accessible
+
+### Safety Features
+
+The bot includes multiple safety layers:
+- **Circuit Breaker**: Automatically pauses trading on daily loss limit or consecutive losses
+- **Drawdown Protection**: Stops trading if portfolio drops beyond threshold
+- **State Persistence**: Recovers open orders and positions after restart
+- **Dry-Run Override**: CLI `--dry-run` flag overrides config for safety
+
 ## CLI Options
 
 ```

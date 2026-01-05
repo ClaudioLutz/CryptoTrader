@@ -23,6 +23,7 @@ The existing README had encoding issues (appeared with spaces between characters
   - Installation instructions for both uv and pip
   - Comprehensive configuration section with security notes
   - CLI options documentation including new `--api-port` and `--no-api` flags
+  - **Live Trading section** with pre-flight checklist and safety features
   - Dashboard setup and usage instructions
   - Development section with testing, code quality, and integration test commands
   - Documentation of additional CLI tools (secrets, security, audit)
