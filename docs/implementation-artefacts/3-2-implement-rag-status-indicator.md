@@ -1,6 +1,6 @@
 # Story 3.2: Implement RAG Status Indicator
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -19,23 +19,23 @@ So that **I instantly know if the trading bot is healthy, degraded, or in error 
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Create status indicator component (AC: 1-4)
-  - [ ] Create `dashboard/components/status_indicator.py`
-  - [ ] Define icons for each status
-  - [ ] Define colors for each status
-  - [ ] Define text labels for each status
+- [x] Task 1: Create status indicator component (AC: 1-4)
+  - [x] Enhanced `dashboard/components/header.py` with icon+text
+  - [x] Define icons for each status (circle, diamond, triangle)
+  - [x] Define colors for each status
+  - [x] Define text labels for each status
 
-- [ ] Task 2: Implement visual styling (AC: 5)
-  - [ ] Make healthy state muted/receding
-  - [ ] Make warning state attention-drawing
-  - [ ] Make error state impossible to miss
+- [x] Task 2: Implement visual styling (AC: 5)
+  - [x] Make healthy state muted/receding (opacity: 0.8)
+  - [x] Make warning state attention-drawing (full opacity)
+  - [x] Make error state impossible to miss (full opacity)
 
-- [ ] Task 3: Bind to state (AC: 6)
-  - [ ] Connect to `state.health.status`
-  - [ ] Update display on state change
+- [x] Task 3: Bind to state (AC: 6)
+  - [x] Connect to `state.is_offline`, `state.is_stale`, `state.is_healthy`
+  - [x] Update display on state change
 
-- [ ] Task 4: Integrate with header (AC: 1)
-  - [ ] Replace placeholder in header status slot
+- [x] Task 4: Integrate with header (AC: 1)
+  - [x] Implemented in header status slot
 
 ## Dev Notes
 
@@ -171,9 +171,18 @@ def header() -> None:
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Completion Notes List
 
+- Enhanced _create_status_indicator() in header.py with icon+text display
+- Uses Unicode icons: circle (healthy), diamond (degraded/stale), triangle (error/offline)
+- Added CSS classes: status-icon, status-text with proper styling
+- Healthy state has opacity: 0.8 to recede into background
+- Warning/error states have full opacity for attention
+
 ### File List
+
+- dashboard/components/header.py (modified)
+- dashboard/assets/css/theme.css (modified)
 

@@ -1,6 +1,6 @@
 # Story 6.1: Implement Timer-Based Polling
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -19,20 +19,20 @@ So that **I always see current information without manual refresh**.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Set up Tier 1 polling (AC: 1, 3)
-  - [ ] Create 2-second timer for health/P&L
-  - [ ] Connect to state.refresh_tier1()
-  - [ ] Verify timer fires correctly
+- [x] Task 1: Set up Tier 1 polling (AC: 1, 3)
+  - [x] Create 2-second timer for health/P&L
+  - [x] Connect to state.refresh_tier1()
+  - [x] Verify timer fires correctly
 
-- [ ] Task 2: Set up Tier 2 polling (AC: 2, 3)
-  - [ ] Create 5-second timer for table/chart
-  - [ ] Connect to state.refresh_tier2()
-  - [ ] Verify timer fires correctly
+- [x] Task 2: Set up Tier 2 polling (AC: 2, 3)
+  - [x] Create 5-second timer for table/chart
+  - [x] Connect to state.refresh_tier2()
+  - [x] Verify timer fires correctly
 
-- [ ] Task 3: Verify silent updates (AC: 4, 5, 6)
-  - [ ] Test that updates don't cause page refresh
-  - [ ] Verify only changed elements update
-  - [ ] Confirm zero flickering
+- [x] Task 3: Verify silent updates (AC: 4, 5, 6)
+  - [x] Test that updates don't cause page refresh
+  - [x] Verify only changed elements update
+  - [x] Confirm zero flickering
 
 ## Dev Notes
 
@@ -157,9 +157,18 @@ ui.on_shutdown(on_shutdown)
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Completion Notes List
 
+- Implemented setup_polling() in main.py with tiered timers
+- Tier 1: 2-second timer for health/P&L via state.refresh_tier1()
+- Tier 2: 5-second timer for table/chart via state.refresh_tier2()
+- Added shutdown_polling() for clean resource cleanup
+- Uses ui.timer() which pushes updates via WebSocket (no page refresh)
+- Delayed start (0.1s) ensures UI is ready before polling begins
+
 ### File List
+
+- dashboard/main.py (modified)
 

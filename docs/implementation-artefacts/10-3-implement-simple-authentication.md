@@ -1,6 +1,6 @@
 # Story 10.3: Implement Simple Authentication (Optional)
 
-Status: ready-for-dev
+Status: review
 
 **Version:** v2.0
 
@@ -20,23 +20,23 @@ So that **the dashboard isn't openly accessible on the network**.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Add authentication config (AC: 5)
-  - [ ] Add `auth_enabled` to config
-  - [ ] Add `auth_password` to config (SecretStr)
+- [x] Task 1: Add authentication config (AC: 5)
+  - [x] Add `auth_enabled` to config
+  - [x] Add `auth_password` to config (SecretStr)
 
-- [ ] Task 2: Create login page (AC: 1, 4)
-  - [ ] Password input field
-  - [ ] Submit button
-  - [ ] Error message display
+- [x] Task 2: Create login page (AC: 1, 4)
+  - [x] Password input field
+  - [x] Submit button
+  - [x] Error message display
 
-- [ ] Task 3: Implement session management (AC: 2, 3)
-  - [ ] Generate session token on success
-  - [ ] Store in cookie
-  - [ ] Validate on page load
+- [x] Task 3: Implement session management (AC: 2, 3)
+  - [x] Generate session token on success
+  - [x] Store in cookie
+  - [x] Validate on page load
 
-- [ ] Task 4: Protect dashboard routes (AC: 2)
-  - [ ] Check authentication before rendering
-  - [ ] Redirect to login if not authenticated
+- [x] Task 4: Protect dashboard routes (AC: 2)
+  - [x] Check authentication before rendering
+  - [x] Redirect to login if not authenticated
 
 ## Dev Notes
 
@@ -254,9 +254,31 @@ For production use, consider:
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Completion Notes List
 
+- Added auth_enabled, auth_password (SecretStr), auth_session_hours to config.py
+- Created auth.py module with:
+  - check_auth() - validates session token
+  - create_session() - generates secure token with expiry
+  - verify_password() - compares against config
+  - create_login_page() - NiceGUI login UI
+  - logout() - clears session
+  - cleanup_expired_sessions() - memory cleanup
+- In-memory session storage with configurable expiry (default 24h)
+- Login page: centered card with password input, toggle visibility, error message
+- Route protection: /login redirects to / if already authenticated
+- Dashboard redirect to /login if not authenticated when auth enabled
+- Auth disabled by default (config.auth_enabled=False)
+- storage_secret added to ui.run() for user storage support
+- Enter key submits login form
+- CSS styling for login page with dark theme
+
 ### File List
+
+- dashboard/config.py (modified)
+- dashboard/auth.py (created)
+- dashboard/main.py (modified)
+- dashboard/assets/css/theme.css (modified)
 

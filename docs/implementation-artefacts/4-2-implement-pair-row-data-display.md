@@ -1,6 +1,6 @@
 # Story 4.2: Implement Pair Row Data Display
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -21,28 +21,28 @@ So that **I can quickly assess each pair's status**.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Enhance symbol display (AC: 1)
-  - [ ] Primary text color
-  - [ ] Bold or medium weight
+- [x] Task 1: Enhance symbol display (AC: 1)
+  - [x] Primary text color via CSS
+  - [x] Medium weight (500) via CSS
 
-- [ ] Task 2: Format price display (AC: 2, 7)
-  - [ ] Currency symbol ($)
-  - [ ] Thousands separator
-  - [ ] Appropriate decimal precision per symbol
+- [x] Task 2: Format price display (AC: 2, 7)
+  - [x] Currency symbol ($) via format_price()
+  - [x] Thousands separator via Python f-string :,
+  - [x] Adaptive precision based on price magnitude
 
-- [ ] Task 3: Format P&L display (AC: 3, 8)
-  - [ ] Color coding (green/red)
-  - [ ] Sign prefix (+/-)
-  - [ ] Currency symbol (€)
-  - [ ] 2 decimal places
+- [x] Task 3: Format P&L display (AC: 3, 8)
+  - [x] Color coding via pnl-positive/pnl-negative classes
+  - [x] Sign prefix (+/-) via format_pnl()
+  - [x] Currency symbol (Euro) via format_pnl()
+  - [x] 2 decimal places
 
-- [ ] Task 4: Format position display (AC: 4)
-  - [ ] Asset amount with symbol
-  - [ ] Appropriate decimal precision
+- [x] Task 4: Format position display (AC: 4)
+  - [x] Asset amount with base symbol via format_position()
+  - [x] Extracts base asset from pair symbol
 
-- [ ] Task 5: Apply monospace styling (AC: 5, 6)
-  - [ ] Roboto Mono for all numbers
-  - [ ] Consistent alignment
+- [x] Task 5: Apply monospace styling (AC: 5, 6)
+  - [x] Roboto Mono via .pairs-table td CSS
+  - [x] Consistent alignment via column align property
 
 ## Dev Notes
 
@@ -183,9 +183,17 @@ def get_rows() -> list[dict]:
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Completion Notes List
 
+- Added format_price() with adaptive precision (2/4/6 decimals based on magnitude)
+- Added format_pnl() returning (text, css_class) tuple
+- Added format_position() extracting base asset from symbol
+- All formatters in pairs_table.py (could be moved to services/formatters.py later)
+- CSS uses monospace font for all table cells
+
 ### File List
+
+- dashboard/components/pairs_table.py (modified)
 

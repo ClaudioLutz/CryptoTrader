@@ -1,6 +1,6 @@
 # Story 1.3: Implement Dark Theme Configuration
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -19,21 +19,21 @@ So that **it's comfortable for 3am monitoring and looks like a serious trading t
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Create theme.css file (AC: 3, 5)
-  - [ ] Define CSS variables for all color tokens
-  - [ ] Set background colors (primary, secondary, surface)
-  - [ ] Set text colors (primary, secondary, tertiary)
-  - [ ] Set semantic colors (success, warning, error)
-  - [ ] Set accent color for interactive elements
+- [x] Task 1: Create theme.css file (AC: 3, 5)
+  - [x] Define CSS variables for all color tokens
+  - [x] Set background colors (primary, secondary, surface)
+  - [x] Set text colors (primary, secondary, tertiary)
+  - [x] Set semantic colors (success, warning, error)
+  - [x] Set accent color for interactive elements
 
-- [ ] Task 2: Configure Quasar dark mode (AC: 4)
-  - [ ] Enable dark mode in NiceGUI configuration
-  - [ ] Apply dark theme on application startup
+- [x] Task 2: Configure Quasar dark mode (AC: 4)
+  - [x] Enable dark mode in NiceGUI configuration
+  - [x] Apply dark theme on application startup
 
-- [ ] Task 3: Apply theme to dashboard (AC: 1, 2, 6)
-  - [ ] Import theme.css in main.py
-  - [ ] Verify background renders as `#1a1a2e`
-  - [ ] Verify text renders as `#e8e8e8`
+- [x] Task 3: Apply theme to dashboard (AC: 1, 2, 6)
+  - [x] Import theme.css in main.py
+  - [x] Verify background renders as `#1a1a2e`
+  - [x] Verify text renders as `#e8e8e8`
 
 ## Dev Notes
 
@@ -149,9 +149,19 @@ ui.add_css('''
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Completion Notes List
 
+- Created theme.css with all color tokens from UX spec
+- CSS variables include: bg-primary (#1a1a2e), bg-secondary, surface, text colors, semantic colors, accent
+- Added PnL-specific colors (positive/negative/neutral) for trading context
+- Quasar dark mode overrides included
+- main.py updated with load_theme() function and ui.dark_mode(True)
+- Theme loads automatically on dashboard startup
+
 ### File List
+
+- dashboard/assets/css/theme.css (created)
+- dashboard/main.py (modified)
 

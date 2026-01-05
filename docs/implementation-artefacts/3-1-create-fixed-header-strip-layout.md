@@ -1,6 +1,6 @@
 # Story 3.1: Create Fixed Header Strip Layout
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -19,26 +19,26 @@ So that **I can see critical status information without scrolling**.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Create header component file (AC: 1, 3, 6)
-  - [ ] Create `dashboard/components/header.py`
-  - [ ] Implement header with fixed height
-  - [ ] Apply background color from theme
+- [x] Task 1: Create header component file (AC: 1, 3, 6)
+  - [x] Create `dashboard/components/header.py`
+  - [x] Implement header with fixed height
+  - [x] Apply background color from theme
 
-- [ ] Task 2: Implement sticky positioning (AC: 2, 5)
-  - [ ] Add CSS for position sticky
-  - [ ] Set z-index for proper layering
-  - [ ] Test scrolling behavior
+- [x] Task 2: Implement sticky positioning (AC: 2, 5)
+  - [x] Add CSS for position sticky
+  - [x] Set z-index for proper layering
+  - [x] Test scrolling behavior
 
-- [ ] Task 3: Create slot layout (AC: 4)
-  - [ ] Add slot for RAG status indicator
-  - [ ] Add slot for P&L display
-  - [ ] Add slot for pair count
-  - [ ] Add slot for order count
-  - [ ] Add slot for timestamp
+- [x] Task 3: Create slot layout (AC: 4)
+  - [x] Add slot for RAG status indicator
+  - [x] Add slot for P&L display
+  - [x] Add slot for pair count
+  - [x] Add slot for order count
+  - [x] Add slot for timestamp
 
-- [ ] Task 4: Integrate with main.py (AC: 6)
-  - [ ] Import header component
-  - [ ] Render header first in page structure
+- [x] Task 4: Integrate with main.py (AC: 6)
+  - [x] Import header component
+  - [x] Render header first in page structure
 
 ## Dev Notes
 
@@ -156,9 +156,20 @@ Add to `theme.css`:
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Completion Notes List
 
+- Created dashboard/components/header.py with create_header() function
+- Header uses ui.header() with .fixed-header class for sticky positioning
+- All 5 slots implemented: status, P&L, pair count, order count, timestamp
+- CSS added to theme.css: .fixed-header with position: sticky, z-index: 1000
+- Header height: 48-56px with #16213e background (--bg-secondary)
+- main.py updated to render header first via create_header()
+
 ### File List
+
+- dashboard/components/header.py (created)
+- dashboard/assets/css/theme.css (modified)
+- dashboard/main.py (modified)
 

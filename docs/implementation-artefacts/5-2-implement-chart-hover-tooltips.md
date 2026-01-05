@@ -1,6 +1,6 @@
 # Story 5.2: Implement Chart Hover Tooltips
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -18,19 +18,19 @@ So that **I can investigate specific price points**.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Configure Plotly hover mode (AC: 1, 2)
-  - [ ] Set hovermode to 'x unified' or 'closest'
-  - [ ] Configure hovertemplate for price format
-  - [ ] Configure timestamp format
+- [x] Task 1: Configure Plotly hover mode (AC: 1, 2)
+  - [x] Set hovermode to 'x unified'
+  - [x] Configure hovertemplate: Price: $%{y:,.2f}, Time: %{x|%H:%M:%S}
+  - [x] Hide trace name with <extra></extra>
 
-- [ ] Task 2: Add crosshair cursor (AC: 3)
-  - [ ] Enable spike lines for x-axis
-  - [ ] Style spike lines with theme colors
+- [x] Task 2: Add crosshair cursor (AC: 3)
+  - [x] Enable spike lines for x-axis and y-axis
+  - [x] Style spike lines: #4a9eff accent color, dot dash
 
-- [ ] Task 3: Style tooltip (AC: 4, 5)
-  - [ ] Dark theme background
-  - [ ] Readable text colors
-  - [ ] Monospace for numerical values
+- [x] Task 3: Style tooltip (AC: 4, 5)
+  - [x] Dark theme background (#16213e)
+  - [x] Text color #e8e8e8
+  - [x] Roboto Mono font for numerical values
 
 ## Dev Notes
 
@@ -136,9 +136,16 @@ fig.update_traces(hoverinfo="x+y", hoverdistance=50)
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Completion Notes List
 
+- Hover tooltips configured in create_figure() with hovertemplate
+- Crosshair implemented via showspikes on both axes
+- Hoverlabel styled with dark theme colors and Roboto Mono font
+- Spikemode set to "across" for full crosshair effect
+
 ### File List
+
+- dashboard/components/price_chart.py (modified)
 

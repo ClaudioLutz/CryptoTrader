@@ -1,6 +1,6 @@
 # Story 2.1: Create Pydantic Data Models
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -19,19 +19,19 @@ So that **data is validated, typed, and easy to work with in components**.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Create data_models.py file (AC: 1-3)
-  - [ ] Create `HealthResponse` model
-  - [ ] Create `PairData` model
-  - [ ] Create `DashboardData` model
+- [x] Task 1: Create data_models.py file (AC: 1-3)
+  - [x] Create `HealthResponse` model
+  - [x] Create `PairData` model
+  - [x] Create `DashboardData` model
 
-- [ ] Task 2: Add field validation (AC: 4, 6)
-  - [ ] Add validators for status enum values
-  - [ ] Use Decimal for price and P&L fields
-  - [ ] Use datetime for timestamp fields
+- [x] Task 2: Add field validation (AC: 4, 6)
+  - [x] Add validators for status enum values
+  - [x] Use Decimal for price and P&L fields
+  - [x] Use datetime for timestamp fields
 
-- [ ] Task 3: Test model instantiation (AC: 5)
-  - [ ] Test creating models from dict
-  - [ ] Test validation error handling
+- [x] Task 3: Test model instantiation (AC: 5)
+  - [x] Test creating models from dict
+  - [x] Test validation error handling
 
 ## Dev Notes
 
@@ -159,9 +159,19 @@ The models should match the existing bot API responses:
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Completion Notes List
 
+- Created HealthResponse with Literal["healthy", "degraded", "error"] status
+- Created PairData with Decimal for price/pnl fields, added pnl_percent field
+- Created DashboardData with computed properties (pair_count, is_healthy)
+- Added OrderData and TradeData models for expanded row details (future stories)
+- All models use X | None syntax (Python 3.11+)
+- Field constraints: ge=0 for prices, amounts, counts
+- Tested model_validate() from dict successfully
+
 ### File List
+
+- dashboard/services/data_models.py (created)
 

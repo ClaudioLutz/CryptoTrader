@@ -1,6 +1,6 @@
 # Story 2.3: Implement Dashboard State Manager
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -19,20 +19,20 @@ So that **all components can access the same data without redundant API calls**.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Create DashboardState class (AC: 1, 2)
-  - [ ] Define state attributes with type hints
-  - [ ] Initialize with default/empty values
-  - [ ] Add connection_status tracking
+- [x] Task 1: Create DashboardState class (AC: 1, 2)
+  - [x] Define state attributes with type hints
+  - [x] Initialize with default/empty values
+  - [x] Add connection_status tracking
 
-- [ ] Task 2: Implement refresh method (AC: 3, 4, 5)
-  - [ ] Create async refresh() method
-  - [ ] Call APIClient to fetch data
-  - [ ] Update connection_status based on results
-  - [ ] Convert timestamps to local timezone
+- [x] Task 2: Implement refresh method (AC: 3, 4, 5)
+  - [x] Create async refresh() method
+  - [x] Call APIClient to fetch data
+  - [x] Update connection_status based on results
+  - [x] Convert timestamps to local timezone
 
-- [ ] Task 3: Implement singleton pattern (AC: 6)
-  - [ ] Create module-level state instance
-  - [ ] Export for import by components
+- [x] Task 3: Implement singleton pattern (AC: 6)
+  - [x] Create module-level state instance
+  - [x] Export for import by components
 
 ## Dev Notes
 
@@ -195,9 +195,20 @@ ui.timer(5.0, state.refresh_tier2)   # Chart, table
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Completion Notes List
 
+- Created DashboardState with health, pairs, total_pnl, last_update attributes
+- connection_status: "connected", "stale", "offline" based on API availability
+- Tiered refresh methods: refresh_tier1(), refresh_tier2() for polling
+- On-demand refresh: refresh_orders(), refresh_trades(), refresh_ohlcv()
+- Computed properties: is_connected, is_stale, is_offline, pair_count, is_healthy
+- UI helper properties: uptime_formatted, last_update_formatted
+- Row expansion state management for expanded details
+- Singleton pattern with module-level `state` instance
+
 ### File List
+
+- dashboard/state.py (modified)
 

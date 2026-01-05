@@ -1,6 +1,6 @@
 # Story 8.1: Implement Timeframe Performance Row
 
-Status: ready-for-dev
+Status: review
 
 **Version:** v1.5
 
@@ -20,22 +20,22 @@ So that **I can understand performance trends**.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Add timeframe P&L API method
-  - [ ] Add endpoint to fetch multi-timeframe P&L
-  - [ ] Define TimeframePerformance data model
+- [x] Task 1: Add timeframe P&L API method
+  - [x] Add endpoint to fetch multi-timeframe P&L
+  - [x] Define TimeframePerformance data model
 
-- [ ] Task 2: Create timeframe row component (AC: 1, 4, 5)
-  - [ ] Position below header (scrollable)
-  - [ ] Display 4 timeframe columns
-  - [ ] Set height 32-40px
+- [x] Task 2: Create timeframe row component (AC: 1, 4, 5)
+  - [x] Position below header (scrollable)
+  - [x] Display 4 timeframe columns
+  - [x] Set height 32-40px
 
-- [ ] Task 3: Display values (AC: 2)
-  - [ ] Show percentage change
-  - [ ] Show absolute value
+- [x] Task 3: Display values (AC: 2)
+  - [x] Show percentage change
+  - [x] Show absolute value
 
-- [ ] Task 4: Apply color coding (AC: 3)
-  - [ ] Green for positive
-  - [ ] Red for negative
+- [x] Task 4: Apply color coding (AC: 3)
+  - [x] Green for positive
+  - [x] Red for negative
 
 ## Dev Notes
 
@@ -186,9 +186,20 @@ class DashboardState:
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Completion Notes List
 
+- Created timeframe_row.py component with 1H, 24H, 7D, 30D columns
+- Added pnl_1h, pnl_24h, pnl_7d, pnl_30d fields to state.py
+- Row positioned below header, scrolls with content (36px height)
+- Color coding: green for positive, red for negative, gray for neutral
+- CSS styling with monospace font for values
+
 ### File List
+
+- dashboard/components/timeframe_row.py (created)
+- dashboard/state.py (modified)
+- dashboard/main.py (modified)
+- dashboard/assets/css/theme.css (modified)
 

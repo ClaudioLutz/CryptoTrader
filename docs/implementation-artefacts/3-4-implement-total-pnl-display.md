@@ -1,6 +1,6 @@
 # Story 3.4: Implement Total P&L Display
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -20,24 +20,24 @@ So that **I immediately know if I'm up or down**.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Create P&L display component (AC: 1, 5)
-  - [ ] Create `dashboard/components/pnl_display.py`
-  - [ ] Format value with sign, currency, decimals
-  - [ ] Apply monospace font
+- [x] Task 1: Create P&L display component (AC: 1, 5)
+  - [x] Enhanced _create_pnl_display() in header.py
+  - [x] Format value with sign, currency, decimals
+  - [x] Uses pnl-display CSS class with monospace font
 
-- [ ] Task 2: Implement color coding (AC: 2, 3, 4)
-  - [ ] Green for positive
-  - [ ] Red for negative
-  - [ ] Gray for zero
+- [x] Task 2: Implement color coding (AC: 2, 3, 4)
+  - [x] Green (pnl-positive) for positive
+  - [x] Red (pnl-negative) for negative
+  - [x] Gray (pnl-neutral) for zero
 
-- [ ] Task 3: Add direction arrows (AC: 6)
-  - [ ] ▲ for positive
-  - [ ] ▼ for negative
-  - [ ] No arrow for zero
+- [x] Task 3: Add direction arrows (AC: 6)
+  - [x] Up arrow for positive
+  - [x] Down arrow for negative
+  - [x] No arrow for zero
 
-- [ ] Task 4: Bind to state (AC: 7)
-  - [ ] Connect to `state.total_pnl`
-  - [ ] Update display on state change
+- [x] Task 4: Bind to state (AC: 7)
+  - [x] Connect to state.total_pnl
+  - [x] Update display on state change
 
 ## Dev Notes
 
@@ -181,9 +181,17 @@ with ui.element("div").classes("header-slot pnl-slot"):
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Completion Notes List
 
+- Enhanced _create_pnl_display() in header.py with arrows and color coding
+- Format: +/- Euro symbol + value + direction arrow
+- Uses Unicode arrows: up arrow for positive, down arrow for negative
+- Color classes: pnl-positive (green), pnl-negative (red), pnl-neutral (gray)
+- Existing CSS classes reused from theme.css
+
 ### File List
+
+- dashboard/components/header.py (modified)
 

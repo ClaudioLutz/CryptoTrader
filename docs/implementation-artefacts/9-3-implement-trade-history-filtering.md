@@ -1,6 +1,6 @@
 # Story 9.3: Implement Trade History Filtering
 
-Status: ready-for-dev
+Status: review
 
 **Version:** v2.0
 
@@ -20,22 +20,22 @@ So that **I can find specific trades**.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Add filter state (AC: 5)
-  - [ ] Track filter selections in state
-  - [ ] Preserve across tab switches
+- [x] Task 1: Add filter state (AC: 5)
+  - [x] Track filter selections in state
+  - [x] Preserve across tab switches
 
-- [ ] Task 2: Create filter controls (AC: 1, 2, 3)
-  - [ ] Trading pair dropdown
-  - [ ] Date range pickers
-  - [ ] Side selector
+- [x] Task 2: Create filter controls (AC: 1, 2, 3)
+  - [x] Trading pair dropdown
+  - [x] Date range pickers
+  - [x] Side selector
 
-- [ ] Task 3: Apply filters to API call (AC: 4)
-  - [ ] Pass filters to get_trade_history()
-  - [ ] Refresh table on filter change
+- [x] Task 3: Apply filters to API call (AC: 4)
+  - [x] Pass filters to get_trade_history()
+  - [x] Refresh table on filter change
 
-- [ ] Task 4: Create filter UI layout
-  - [ ] Horizontal filter bar
-  - [ ] Clear filters button
+- [x] Task 4: Create filter UI layout
+  - [x] Horizontal filter bar
+  - [x] Clear filters button
 
 ## Dev Notes
 
@@ -223,9 +223,21 @@ def trade_history_view() -> None:
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Completion Notes List
 
+- Added filter state fields to state.py (history_filter_symbol, side, start, end)
+- Created _create_filter_bar() with dropdowns and date inputs
+- Pair dropdown populated from state.pairs
+- Side dropdown: All, Buy, Sell
+- Date filters use text input with YYYY-MM-DD format
+- Clear Filters button resets all filter state
+- Filters applied in _get_filtered_rows() function
+
 ### File List
+
+- dashboard/state.py (modified)
+- dashboard/components/trade_history.py (modified)
+- dashboard/assets/css/theme.css (modified)
 

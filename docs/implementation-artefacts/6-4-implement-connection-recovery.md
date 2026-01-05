@@ -1,6 +1,6 @@
 # Story 6.4: Implement Connection Recovery
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -18,24 +18,24 @@ So that **temporary connectivity issues don't require manual intervention**.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Implement retry logic (AC: 1, 5)
-  - [ ] Add retry with exponential backoff
-  - [ ] Configure max retries
-  - [ ] Reset backoff on success
+- [x] Task 1: Implement retry logic (AC: 1, 5)
+  - [x] Add retry with exponential backoff
+  - [x] Configure max retries
+  - [x] Reset backoff on success
 
-- [ ] Task 2: Add reconnecting state (AC: 3)
-  - [ ] Add "reconnecting" connection_status
-  - [ ] Update UI to show reconnecting state
+- [x] Task 2: Add reconnecting state (AC: 3)
+  - [x] Add "reconnecting" connection_status
+  - [x] Update UI to show reconnecting state
 
-- [ ] Task 3: Auto-recovery behavior (AC: 2, 4)
-  - [ ] Resume normal polling on success
-  - [ ] Clear reconnecting state
-  - [ ] Update status indicator
+- [x] Task 3: Auto-recovery behavior (AC: 2, 4)
+  - [x] Resume normal polling on success
+  - [x] Clear reconnecting state
+  - [x] Update status indicator
 
-- [ ] Task 4: Test recovery scenarios
-  - [ ] Simulate network loss
-  - [ ] Verify automatic recovery
-  - [ ] Test edge cases
+- [x] Task 4: Test recovery scenarios
+  - [x] Simulate network loss
+  - [x] Verify automatic recovery
+  - [x] Test edge cases
 
 ## Dev Notes
 
@@ -187,9 +187,19 @@ async def refresh_tier1(self) -> None:
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Completion Notes List
 
+- Added ConnectionStatus type: "connected", "reconnecting", "stale", "offline"
+- Implemented _refresh_with_retry() with exponential backoff (1s, 2s, 4s, 8s, 16s)
+- Added _handle_retry() for automatic reconnection attempts
+- Header status indicator shows "RECONNECTING" with rotating arrow icon
+- Retry count resets on successful connection
+- Max 5 retries before marking offline
+
 ### File List
+
+- dashboard/state.py (modified - retry logic, ConnectionStatus)
+- dashboard/components/header.py (modified - reconnecting state display)
 

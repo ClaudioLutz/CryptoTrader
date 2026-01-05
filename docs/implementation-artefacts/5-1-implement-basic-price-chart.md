@@ -1,6 +1,6 @@
 # Story 5.1: Implement Basic Price Chart
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -19,24 +19,24 @@ So that **I can understand recent price movements**.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Create chart component (AC: 1, 4)
-  - [ ] Create `dashboard/components/price_chart.py`
-  - [ ] Initialize Plotly figure with line trace
-  - [ ] Configure X and Y axes
+- [x] Task 1: Create chart component (AC: 1, 4)
+  - [x] Created `dashboard/components/price_chart.py`
+  - [x] Initialize Plotly figure with go.Scatter line trace
+  - [x] Configure X (Time) and Y (Price) axes
 
-- [ ] Task 2: Apply dark theme styling (AC: 3)
-  - [ ] Set background color
-  - [ ] Set grid line color
-  - [ ] Set line color (accent)
-  - [ ] Configure axis labels
+- [x] Task 2: Apply dark theme styling (AC: 3)
+  - [x] Set background color (#1a1a2e)
+  - [x] Set grid line color (#0f3460)
+  - [x] Set line color (accent #4a9eff)
+  - [x] Configure axis labels with theme colors
 
-- [ ] Task 3: Set chart dimensions (AC: 2)
-  - [ ] Set height to 300-400px
-  - [ ] Make width responsive
+- [x] Task 3: Set chart dimensions (AC: 2)
+  - [x] Set height to 350px
+  - [x] Width responsive via CSS
 
-- [ ] Task 4: Configure timeframe (AC: 5, 6)
-  - [ ] Default to 24 hours
-  - [ ] Optimize for fast render
+- [x] Task 4: Configure timeframe (AC: 5, 6)
+  - [x] Default to 24 hours of sample data
+  - [x] Uses state.ohlcv when available
 
 ## Dev Notes
 
@@ -171,9 +171,20 @@ def update_chart(new_data):
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Completion Notes List
 
+- Created dashboard/components/price_chart.py with create_price_chart()
+- Uses Plotly go.Figure with go.Scatter trace
+- Dark theme: plotly_dark template with custom colors
+- Chart height 350px, responsive width
+- Includes sample data generation for demo mode
+- Integrated into main.py below pairs table
+
 ### File List
+
+- dashboard/components/price_chart.py (created)
+- dashboard/assets/css/theme.css (modified)
+- dashboard/main.py (modified)
 

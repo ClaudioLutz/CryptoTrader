@@ -1,0 +1,836 @@
+/* CryptoTrader Dashboard - Dark Theme
+ * Source: docs/planning-artefacts/ux-design-specification.md
+ */
+
+:root {
+  /* Background colors */
+  --bg-primary: #1a1a2e;
+  --bg-secondary: #16213e;
+  --surface: #0f3460;
+
+  /* Text colors */
+  --text-primary: #e8e8e8;
+  --text-secondary: #a0a0a0;
+  --text-tertiary: #6b7280;
+
+  /* Semantic colors (RAG status) */
+  --status-success: #00c853;
+  --status-warning: #ffc107;
+  --status-error: #ff5252;
+
+  /* Interactive elements */
+  --accent: #4a9eff;
+  --accent-hover: #6bb3ff;
+
+  /* PnL colors */
+  --pnl-positive: #00c853;
+  --pnl-negative: #ff5252;
+  --pnl-neutral: #a0a0a0;
+}
+
+/* Base body styling */
+body {
+  background-color: var(--bg-primary) !important;
+  color: var(--text-primary);
+}
+
+/* Quasar dark mode overrides */
+.q-dark {
+  --q-primary: var(--accent);
+  --q-dark: var(--bg-primary);
+  --q-dark-page: var(--bg-primary);
+}
+
+/* NiceGUI page background */
+.nicegui-content {
+  background-color: var(--bg-primary) !important;
+}
+
+/* Card/surface styling */
+.q-card {
+  background-color: var(--bg-secondary) !important;
+}
+
+/* Table styling */
+.q-table {
+  background-color: var(--bg-secondary) !important;
+}
+
+.q-table--dark .q-table__top,
+.q-table--dark .q-table__bottom {
+  background-color: var(--bg-secondary) !important;
+}
+
+/* Header styling */
+.q-header {
+  background-color: var(--bg-secondary) !important;
+}
+
+/* Text color classes */
+.text-primary {
+  color: var(--text-primary) !important;
+}
+
+.text-secondary {
+  color: var(--text-secondary) !important;
+}
+
+.text-tertiary {
+  color: var(--text-tertiary) !important;
+}
+
+/* Status colors */
+.status-success {
+  color: var(--status-success) !important;
+}
+
+.status-warning {
+  color: var(--status-warning) !important;
+}
+
+.status-error {
+  color: var(--status-error) !important;
+}
+
+/* PnL colors */
+.pnl-positive {
+  color: var(--pnl-positive) !important;
+}
+
+.pnl-negative {
+  color: var(--pnl-negative) !important;
+}
+
+.pnl-neutral {
+  color: var(--pnl-neutral) !important;
+}
+
+/* Accent/interactive colors */
+.accent {
+  color: var(--accent) !important;
+}
+
+.accent-hover:hover {
+  color: var(--accent-hover) !important;
+}
+
+/* ============================================
+   Header Strip Styles (Story 3.1)
+   ============================================ */
+
+.fixed-header {
+  position: sticky !important;
+  top: 0;
+  z-index: 1000;
+  height: 48px;
+  min-height: 48px;
+  max-height: 56px;
+  background-color: var(--bg-secondary) !important;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--surface);
+}
+
+.header-content {
+  height: 100%;
+  gap: 24px;
+}
+
+.header-slot {
+  display: flex;
+  align-items: center;
+}
+
+/* Status indicator styles (Story 3.2) */
+.status-indicator {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 4px;
+}
+
+.status-icon {
+  font-size: 16px;
+}
+
+.status-text {
+  font-family: 'Roboto Mono', monospace;
+  font-weight: 500;
+  font-size: 13px;
+  letter-spacing: 0.5px;
+}
+
+.status-healthy {
+  color: var(--status-success);
+  background-color: rgba(0, 200, 83, 0.15);
+  opacity: 0.8; /* Muted - recedes into background */
+}
+
+.status-warning {
+  color: var(--status-warning);
+  background-color: rgba(255, 193, 7, 0.15);
+  opacity: 1.0; /* Full attention */
+}
+
+.status-error {
+  color: var(--status-error);
+  background-color: rgba(255, 82, 82, 0.15);
+  opacity: 1.0; /* Full attention */
+}
+
+/* P&L display styles */
+.pnl-display {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* Count displays */
+.pair-count,
+.order-count {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+/* Timestamp display (Story 3.3) */
+.timestamp-display {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 14px;
+  color: var(--text-tertiary);
+  transition: color 0.3s ease;
+}
+
+.timestamp-stale {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 14px;
+  color: var(--status-warning); /* Amber for stale data */
+}
+
+/* Count warning (Story 3.5) */
+.count-warning {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 14px;
+  color: var(--status-warning); /* Amber when fewer pairs than expected */
+}
+
+/* ============================================
+   Pairs Table Styles (Epic 4)
+   ============================================ */
+
+.pairs-table-container {
+  margin-top: 16px;
+  padding: 0 16px;
+}
+
+.pairs-table {
+  width: 100%;
+  background-color: var(--surface) !important; /* #0f3460 */
+}
+
+.pairs-table .q-table__top,
+.pairs-table .q-table__bottom {
+  display: none; /* Hide pagination - not needed for 4-5 rows */
+}
+
+/* Table header styling */
+.pairs-table th {
+  font-weight: 500 !important;
+  color: var(--text-secondary) !important;
+  font-size: 12px !important;
+  text-transform: uppercase;
+  background-color: var(--bg-secondary) !important;
+}
+
+/* Table row styling */
+.pairs-table tbody tr {
+  height: 40px;
+  transition: background-color 150ms ease-in-out;
+  cursor: pointer; /* Ready for v1.5 row expansion */
+}
+
+/* Row hover state (Story 4.3) */
+.pairs-table tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.05) !important; /* Subtle highlight */
+}
+
+/* Table cell styling */
+.pairs-table td {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+/* Symbol column */
+.pairs-table td:first-child {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+/* Empty state styling */
+.pairs-table-empty {
+  padding: 32px;
+  text-align: center;
+  background-color: var(--surface) !important;
+}
+
+/* ============================================
+   Price Chart Styles (Epic 5)
+   ============================================ */
+
+.chart-container {
+  margin-top: 16px;
+  padding: 0 16px;
+}
+
+.chart-header {
+  margin-bottom: 8px;
+}
+
+.chart-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.chart-pair {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.price-chart {
+  width: 100%;
+  min-height: 300px;
+  max-height: 400px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+/* Chart placeholder */
+.chart-placeholder {
+  padding: 48px;
+  text-align: center;
+  background-color: var(--surface) !important;
+  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Selected pair row styling for chart interaction */
+.pairs-table tbody tr.selected {
+  background-color: rgba(74, 158, 255, 0.15) !important;
+  border-left: 3px solid var(--accent);
+}
+
+.pairs-table tbody tr:hover:not(.selected) {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* ============================================
+   Expandable Row Details (Epic 7)
+   ============================================ */
+
+/* Expansion component styling (Story 7.1) */
+.pair-expansion {
+  margin: 0 !important;
+  border-radius: 0 !important;
+  background-color: var(--surface) !important;
+  border-bottom: 1px solid var(--bg-secondary);
+}
+
+.pair-expansion .q-expansion-item__container {
+  background-color: var(--surface) !important;
+}
+
+.pair-expansion .q-item {
+  padding: 8px 16px;
+  min-height: 44px;
+}
+
+.pair-expansion .q-item:hover {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Pair row header layout */
+.pair-row-header {
+  display: grid;
+  grid-template-columns: 24px 1fr 100px 100px 80px 60px;
+  align-items: center;
+  width: 100%;
+}
+
+.pair-symbol {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.pair-price,
+.pair-pnl,
+.pair-position,
+.pair-orders {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 13px;
+}
+
+/* Expand icon animation (Story 7.1 AC2, AC5) */
+.expand-icon {
+  transition: transform 200ms ease-in-out;
+  color: var(--text-secondary);
+}
+
+.expand-icon.rotated {
+  transform: rotate(90deg);
+}
+
+/* Expansion content panel (Story 7.1 AC1) */
+.expansion-content {
+  padding: 16px;
+  background-color: var(--bg-secondary);
+  border-left: 3px solid var(--accent);
+}
+
+.expansion-grid {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+/* Section labels */
+.section-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+
+/* Order details section (Story 7.2) */
+.order-details-section {
+  min-width: 200px;
+}
+
+.order-summary {
+  display: flex;
+  gap: 24px;
+}
+
+.order-group {
+  text-align: center;
+}
+
+.order-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-bottom: 4px;
+}
+
+.order-count {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.order-count.buy-count {
+  color: var(--status-success);
+}
+
+.order-count.sell-count {
+  color: var(--status-error);
+}
+
+.price-range-text {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 4px;
+}
+
+/* Trades section (Story 7.3) */
+.trades-section {
+  flex: 1;
+  min-width: 300px;
+}
+
+.trades-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Trade row styling (Story 7.3 AC6) */
+.trade-row {
+  padding: 6px 12px;
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  font-family: 'Roboto Mono', monospace;
+  font-size: 12px;
+}
+
+.trade-row.trade-buy {
+  border-left: 3px solid var(--status-success);
+}
+
+.trade-row.trade-sell {
+  border-left: 3px solid var(--status-error);
+}
+
+.trade-icon {
+  font-size: 14px;
+}
+
+.trade-buy .trade-icon,
+.trade-buy .trade-side {
+  color: var(--status-success);
+}
+
+.trade-sell .trade-icon,
+.trade-sell .trade-side {
+  color: var(--status-error);
+}
+
+.trade-side {
+  font-weight: 600;
+  font-size: 10px;
+  width: 32px;
+}
+
+.trade-price {
+  color: var(--text-primary);
+  min-width: 80px;
+}
+
+.trade-amount {
+  color: var(--text-secondary);
+  min-width: 60px;
+}
+
+.trade-time {
+  color: var(--text-tertiary);
+  margin-left: auto;
+}
+
+/* ============================================
+   Timeframe Performance Row (Story 8.1)
+   ============================================ */
+
+.timeframe-row {
+  height: 36px;
+  background-color: var(--bg-secondary);
+  padding: 0 16px;
+  border-bottom: 1px solid var(--surface);
+}
+
+.timeframe-cell {
+  min-width: 120px;
+  text-align: center;
+}
+
+.timeframe-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  letter-spacing: 0.5px;
+}
+
+.timeframe-values {
+  gap: 8px;
+}
+
+.timeframe-pct {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.timeframe-abs {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.timeframe-positive {
+  color: var(--status-success);
+}
+
+.timeframe-negative {
+  color: var(--status-error);
+}
+
+.timeframe-neutral {
+  color: var(--text-secondary);
+}
+
+/* ============================================
+   Chart Mode Toggle (Story 8.3)
+   ============================================ */
+
+.chart-toggle {
+  z-index: 10;
+}
+
+.toggle-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.chart-mode-toggle {
+  background-color: var(--surface) !important;
+  border-radius: 4px;
+}
+
+.chart-mode-toggle .q-btn {
+  font-size: 11px !important;
+  padding: 4px 12px !important;
+}
+
+.chart-mode-toggle .q-btn--active {
+  background-color: var(--accent) !important;
+  color: var(--text-primary) !important;
+}
+
+/* ============================================
+   Tab Navigation (Story 9.1)
+   ============================================ */
+
+.dashboard-tabs {
+  background-color: var(--bg-secondary) !important;
+  border-bottom: 1px solid var(--surface);
+}
+
+.dashboard-tabs .q-tab {
+  color: var(--text-secondary) !important;
+  text-transform: none;
+  font-weight: 500;
+}
+
+.dashboard-tabs .q-tab--active {
+  color: var(--accent) !important;
+}
+
+.dashboard-tabs .q-tab__indicator {
+  background-color: var(--accent) !important;
+  height: 3px;
+}
+
+.tab-panels {
+  background-color: transparent !important;
+}
+
+.tab-panels .q-tab-panel {
+  padding: 0 !important;
+}
+
+/* ============================================
+   Trade History (Stories 9.2, 9.3)
+   ============================================ */
+
+.trade-history-view {
+  background-color: var(--bg-primary);
+}
+
+/* Filter bar */
+.history-filters {
+  background-color: var(--bg-secondary);
+  border-bottom: 1px solid var(--surface);
+}
+
+.filter-select {
+  min-width: 130px;
+}
+
+.date-input {
+  width: 140px;
+}
+
+.clear-button {
+  color: var(--text-secondary) !important;
+}
+
+.clear-button:hover {
+  color: var(--text-primary) !important;
+}
+
+/* History table */
+.history-table-container {
+  padding: 16px;
+}
+
+.history-table {
+  background-color: var(--surface) !important;
+}
+
+.history-table th {
+  font-weight: 500 !important;
+  color: var(--text-secondary) !important;
+  font-size: 12px !important;
+  text-transform: uppercase;
+  background-color: var(--bg-secondary) !important;
+}
+
+.history-table td {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 13px;
+}
+
+/* Side column colors */
+.history-table .trade-buy {
+  color: var(--status-success);
+}
+
+.history-table .trade-sell {
+  color: var(--status-error);
+}
+
+/* Pagination controls */
+.pagination-controls {
+  justify-content: center;
+  gap: 16px;
+  padding: 16px;
+}
+
+/* ============================================
+   Grid Toggle (Story 10.1)
+   ============================================ */
+
+.grid-toggle {
+  color: var(--text-secondary);
+}
+
+.grid-toggle .q-checkbox__label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* ============================================
+   Configuration View (Story 10.2)
+   ============================================ */
+
+.config-view {
+  padding: 16px;
+  max-width: 800px;
+}
+
+.config-panel {
+  background-color: var(--bg-primary);
+}
+
+.config-section {
+  background-color: var(--bg-secondary) !important;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.section-header {
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  letter-spacing: 0.5px;
+}
+
+.config-items {
+  gap: 0;
+}
+
+.config-item {
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--surface);
+}
+
+.config-item:last-child {
+  border-bottom: none;
+}
+
+.config-label {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.config-value {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.pair-config-card {
+  background-color: var(--surface) !important;
+  padding: 12px;
+  margin-bottom: 8px;
+}
+
+.pair-settings {
+  margin-top: 8px;
+}
+
+.status-enabled {
+  background-color: var(--status-success) !important;
+  color: var(--bg-primary) !important;
+}
+
+.status-disabled {
+  background-color: var(--text-tertiary) !important;
+  color: var(--bg-primary) !important;
+}
+
+.read-only-badge {
+  background-color: var(--surface) !important;
+  color: var(--text-secondary) !important;
+  font-size: 10px;
+  padding: 2px 8px;
+}
+
+/* ============================================
+   Login Page (Story 10.3)
+   ============================================ */
+
+.login-card {
+  max-width: 400px;
+  margin: 100px auto;
+  padding: 32px;
+  background-color: var(--bg-secondary) !important;
+  text-align: center;
+}
+
+.login-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.login-subtitle {
+  color: var(--text-secondary);
+  margin-bottom: 24px;
+}
+
+.login-input {
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.login-button {
+  width: 100%;
+  background-color: var(--accent) !important;
+  color: var(--text-primary) !important;
+}
+
+.login-button:hover {
+  background-color: var(--accent-hover) !important;
+}
+
+.login-error {
+  color: var(--status-error);
+  font-size: 13px;
+  margin-bottom: 16px;
+  visibility: hidden;
+}
+
+.login-error.visible {
+  visibility: visible;
+}

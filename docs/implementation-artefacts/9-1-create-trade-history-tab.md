@@ -1,6 +1,6 @@
 # Story 9.1: Create Trade History Tab
 
-Status: ready-for-dev
+Status: review
 
 **Version:** v2.0
 
@@ -18,18 +18,18 @@ So that **I can review past trades without cluttering the main view**.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Implement tab navigation (AC: 1, 3)
-  - [ ] Add tabs container to main layout
-  - [ ] Create "Dashboard" tab (existing content)
-  - [ ] Create "Trade History" tab
+- [x] Task 1: Implement tab navigation (AC: 1, 3)
+  - [x] Add tabs container to main layout
+  - [x] Create "Dashboard" tab (existing content)
+  - [x] Create "Trade History" tab
 
-- [ ] Task 2: Preserve main view (AC: 2)
-  - [ ] Dashboard tab contains header, table, chart
-  - [ ] History tab separate content area
+- [x] Task 2: Preserve main view (AC: 2)
+  - [x] Dashboard tab contains header, table, chart
+  - [x] History tab separate content area
 
-- [ ] Task 3: Style tabs for dark theme
-  - [ ] Apply theme colors
-  - [ ] Active tab indicator
+- [x] Task 3: Style tabs for dark theme
+  - [x] Apply theme colors
+  - [x] Active tab indicator
 
 ## Dev Notes
 
@@ -121,9 +121,18 @@ Tabs are preferred for v2.0 because:
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Completion Notes List
 
+- Added ui.tabs() with Dashboard and Trade History tabs to main.py
+- Dashboard tab contains existing content (timeframe row, pairs table, chart)
+- Trade History tab contains create_trade_history_view() component
+- CSS styles for dark theme tabs with accent color indicator
+- Tab panels use transparent background to preserve theme
+
 ### File List
+
+- dashboard/main.py (modified)
+- dashboard/assets/css/theme.css (modified)
 

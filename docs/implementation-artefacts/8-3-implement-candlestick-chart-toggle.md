@@ -1,6 +1,6 @@
 # Story 8.3: Implement Candlestick Chart Toggle
 
-Status: ready-for-dev
+Status: review
 
 **Version:** v1.5
 
@@ -19,22 +19,22 @@ So that **I can see OHLC data when investigating**.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Add chart mode state (AC: 3)
-  - [ ] Add `chart_mode` to state ("line" | "candlestick")
-  - [ ] Default to "line"
+- [x] Task 1: Add chart mode state (AC: 3)
+  - [x] Add `chart_mode` to state ("line" | "candlestick")
+  - [x] Default to "line"
 
-- [ ] Task 2: Create toggle control (AC: 1)
-  - [ ] Add toggle/switch UI element
-  - [ ] Connect to state.chart_mode
+- [x] Task 2: Create toggle control (AC: 1)
+  - [x] Add toggle/switch UI element
+  - [x] Connect to state.chart_mode
 
-- [ ] Task 3: Implement candlestick trace (AC: 2)
-  - [ ] Use go.Candlestick
-  - [ ] Green for up (close > open)
-  - [ ] Red for down (close < open)
+- [x] Task 3: Implement candlestick trace (AC: 2)
+  - [x] Use go.Candlestick
+  - [x] Green for up (close > open)
+  - [x] Red for down (close < open)
 
-- [ ] Task 4: Toggle without refetch (AC: 4)
-  - [ ] Store OHLC data
-  - [ ] Switch trace type only
+- [x] Task 4: Toggle without refetch (AC: 4)
+  - [x] Store OHLC data
+  - [x] Switch trace type only
 
 ## Dev Notes
 
@@ -199,9 +199,20 @@ class OHLCData(BaseModel):
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Completion Notes List
 
+- Added ChartMode type and chart_mode field to state.py
+- Created Line/Candles toggle in chart header
+- Candlestick mode uses go.Candlestick with OHLC data
+- Green for up candles (close > open), red for down
+- Toggle updates chart via update_figure() without refetch
+- Chart mode preference persists during session
+
 ### File List
+
+- dashboard/state.py (modified)
+- dashboard/components/price_chart.py (modified)
+- dashboard/assets/css/theme.css (modified)
 

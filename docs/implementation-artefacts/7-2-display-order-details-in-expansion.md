@@ -1,6 +1,6 @@
 # Story 7.2: Display Order Details in Expansion
 
-Status: ready-for-dev
+Status: review
 
 **Version:** v1.5
 
@@ -20,22 +20,22 @@ So that **I can understand the grid setup for that pair**.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Add order details API method (AC: 4)
-  - [ ] Add `get_pair_orders(symbol)` to APIClient
-  - [ ] Define PairOrders data model
+- [x] Task 1: Add order details API method (AC: 4)
+  - [x] Add `get_pair_orders(symbol)` to APIClient
+  - [x] Define PairOrders data model
 
-- [ ] Task 2: Create order details component (AC: 1, 2, 3)
-  - [ ] Display buy order count
-  - [ ] Display sell order count
-  - [ ] Display price range
+- [x] Task 2: Create order details component (AC: 1, 2, 3)
+  - [x] Display buy order count
+  - [x] Display sell order count
+  - [x] Display price range
 
-- [ ] Task 3: Implement on-demand fetching (AC: 4)
-  - [ ] Fetch when row expands
-  - [ ] Cache results during session
+- [x] Task 3: Implement on-demand fetching (AC: 4)
+  - [x] Fetch when row expands
+  - [x] Cache results during session
 
-- [ ] Task 4: Apply formatting (AC: 5)
-  - [ ] Use same price formatting
-  - [ ] Monospace typography
+- [x] Task 4: Apply formatting (AC: 5)
+  - [x] Use same price formatting
+  - [x] Monospace typography
 
 ## Dev Notes
 
@@ -187,9 +187,18 @@ async def get_cached_orders(symbol: str) -> OrderSummary | None:
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Completion Notes List
 
+- Used existing get_orders(symbol) API method via state.refresh_orders()
+- Created _create_order_details() component showing buy/sell counts
+- Calculates lowest buy and highest sell price range from orders
+- On-demand fetching in _on_expansion_change handler
+- Monospace typography with color-coded counts (green buy, red sell)
+
 ### File List
+
+- dashboard/components/pairs_table.py (modified)
+- dashboard/assets/css/theme.css (modified)
 

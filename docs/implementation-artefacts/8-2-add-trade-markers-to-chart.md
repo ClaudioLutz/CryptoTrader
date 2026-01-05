@@ -1,6 +1,6 @@
 # Story 8.2: Add Trade Markers to Chart
 
-Status: ready-for-dev
+Status: review
 
 **Version:** v1.5
 
@@ -19,21 +19,21 @@ So that **I can correlate price action with bot activity**.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Fetch trade data for chart (AC: 1, 2)
-  - [ ] Get trades for selected pair
-  - [ ] Filter to chart timeframe
+- [x] Task 1: Fetch trade data for chart (AC: 1, 2)
+  - [x] Get trades for selected pair
+  - [x] Filter to chart timeframe
 
-- [ ] Task 2: Add marker trace to Plotly (AC: 1, 2)
-  - [ ] Scatter trace with triangle markers
-  - [ ] Green for buys, red for sells
+- [x] Task 2: Add marker trace to Plotly (AC: 1, 2)
+  - [x] Scatter trace with triangle markers
+  - [x] Green for buys, red for sells
 
-- [ ] Task 3: Configure hover tooltips (AC: 3)
-  - [ ] Show price, amount, timestamp
-  - [ ] Dark theme styling
+- [x] Task 3: Configure hover tooltips (AC: 3)
+  - [x] Show price, amount, timestamp
+  - [x] Dark theme styling
 
-- [ ] Task 4: Handle zoom behavior (AC: 4)
-  - [ ] Fixed pixel size markers
-  - [ ] Or scale with zoom level
+- [x] Task 4: Handle zoom behavior (AC: 4)
+  - [x] Fixed pixel size markers
+  - [x] Or scale with zoom level
 
 ## Dev Notes
 
@@ -165,9 +165,18 @@ trades = await api_client.get_pair_trades(
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Completion Notes List
 
+- Created _add_trade_markers() function in price_chart.py
+- Buy trades: green triangle-up markers with border
+- Sell trades: red triangle-down markers with border
+- Hover template shows BUY/SELL, price, amount, timestamp
+- Fixed 12px marker size maintains visibility during zoom
+- Filters trades by selected pair before display
+
 ### File List
+
+- dashboard/components/price_chart.py (modified)
 

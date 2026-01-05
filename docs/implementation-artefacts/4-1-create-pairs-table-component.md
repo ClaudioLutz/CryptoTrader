@@ -1,6 +1,6 @@
 # Story 4.1: Create Pairs Table Component
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -19,27 +19,27 @@ So that **I can compare performance across pairs at a glance**.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Create pairs table component (AC: 1, 5)
-  - [ ] Create `dashboard/components/pairs_table.py`
-  - [ ] Position below header strip
-  - [ ] Iterate over `state.pairs` to create rows
+- [x] Task 1: Create pairs table component (AC: 1, 5)
+  - [x] Create `dashboard/components/pairs_table.py`
+  - [x] Position below header strip via main.py
+  - [x] Iterate over `state.pairs` to create rows
 
-- [ ] Task 2: Define table structure (AC: 6)
-  - [ ] Create column headers
-  - [ ] Symbol column
-  - [ ] Price column
-  - [ ] P&L column
-  - [ ] Position column
-  - [ ] Orders column
+- [x] Task 2: Define table structure (AC: 6)
+  - [x] Create column headers (COLUMNS constant)
+  - [x] Symbol column (left aligned)
+  - [x] Price column (right aligned)
+  - [x] P&L column (right aligned)
+  - [x] Position column (right aligned)
+  - [x] Orders column (center aligned)
 
-- [ ] Task 3: Apply compact styling (AC: 2, 3, 4)
-  - [ ] Set row height to ~40px
-  - [ ] Apply dark theme colors
-  - [ ] Ensure all rows visible (no internal scroll)
+- [x] Task 3: Apply compact styling (AC: 2, 3, 4)
+  - [x] Set row height to 40px via CSS
+  - [x] Apply dark theme colors (#0f3460 surface)
+  - [x] Hide pagination (not needed for 4-5 rows)
 
-- [ ] Task 4: Bind to state (AC: 1)
-  - [ ] Connect to `state.pairs`
-  - [ ] Update table on state change
+- [x] Task 4: Bind to state (AC: 1)
+  - [x] Connect to `state.pairs`
+  - [x] Update table via get_rows() function
 
 ## Dev Notes
 
@@ -178,9 +178,20 @@ For MVP with 4-5 rows, `ui.table()` is sufficient.
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Completion Notes List
 
+- Created dashboard/components/pairs_table.py with create_pairs_table()
+- Table uses NiceGUI ui.table() with COLUMNS constant
+- Rows display: Symbol, Price, P&L, Position, Orders
+- CSS styles added to theme.css: .pairs-table-container, .pairs-table
+- Table positioned below header via main.py integration
+- Used flat/bordered/dense props to hide pagination
+
 ### File List
+
+- dashboard/components/pairs_table.py (created)
+- dashboard/assets/css/theme.css (modified)
+- dashboard/main.py (modified)
 

@@ -1,6 +1,6 @@
 # Story 1.4: Create Configuration Module
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -18,24 +18,24 @@ So that **settings like API URL and poll intervals can be changed without code m
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Create DashboardConfig class (AC: 1, 2, 5)
-  - [ ] Define `api_base_url` with default `http://localhost:8080`
-  - [ ] Define `dashboard_port` with default `8081`
-  - [ ] Define `poll_interval_tier1` with default `2.0` seconds
-  - [ ] Define `poll_interval_tier2` with default `5.0` seconds
-  - [ ] Define `api_timeout` with default `5.0` seconds
+- [x] Task 1: Create DashboardConfig class (AC: 1, 2, 5)
+  - [x] Define `api_base_url` with default `http://localhost:8080`
+  - [x] Define `dashboard_port` with default `8081`
+  - [x] Define `poll_interval_tier1` with default `2.0` seconds
+  - [x] Define `poll_interval_tier2` with default `5.0` seconds
+  - [x] Define `api_timeout` with default `5.0` seconds
 
-- [ ] Task 2: Configure environment variable support (AC: 3)
-  - [ ] Set `env_prefix = "DASHBOARD_"` in model_config
-  - [ ] Test override with `DASHBOARD_API_BASE_URL`
+- [x] Task 2: Configure environment variable support (AC: 3)
+  - [x] Set `env_prefix = "DASHBOARD_"` in model_config
+  - [x] Test override with `DASHBOARD_API_BASE_URL`
 
-- [ ] Task 3: Implement singleton pattern (AC: 4)
-  - [ ] Create module-level `config` instance
-  - [ ] Export for import by other modules
+- [x] Task 3: Implement singleton pattern (AC: 4)
+  - [x] Create module-level `config` instance
+  - [x] Export for import by other modules
 
-- [ ] Task 4: Add validation and documentation (AC: 5)
-  - [ ] Add Field constraints (ge, le) where appropriate
-  - [ ] Add docstrings for each setting
+- [x] Task 4: Add validation and documentation (AC: 5)
+  - [x] Add Field constraints (ge, le) where appropriate
+  - [x] Add docstrings for each setting
 
 ## Dev Notes
 
@@ -155,9 +155,18 @@ export DASHBOARD_PORT=3000
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Completion Notes List
 
+- Implemented DashboardConfig class using Pydantic Settings v2 syntax
+- All settings have sensible defaults matching architecture spec
+- Environment variable override tested and working (DASHBOARD_ prefix)
+- Added extra="ignore" to handle coexistence with bot's .env variables
+- Field constraints added: port range (1024-65535), timeout (1-30s), poll intervals
+- Singleton pattern: module-level `config` instance exported
+
 ### File List
+
+- dashboard/config.py (modified)
 

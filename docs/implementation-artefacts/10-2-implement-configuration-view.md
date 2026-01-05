@@ -1,6 +1,6 @@
 # Story 10.2: Implement Configuration View
 
-Status: ready-for-dev
+Status: review
 
 **Version:** v2.0
 
@@ -19,23 +19,23 @@ So that **I can verify the bot is configured as expected**.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Fetch configuration from API
-  - [ ] Add API method for bot config
-  - [ ] Define BotConfig data model
+- [x] Task 1: Fetch configuration from API
+  - [x] Add API method for bot config
+  - [x] Define BotConfig data model
 
-- [ ] Task 2: Create configuration display (AC: 1, 3)
-  - [ ] Display trading pairs
-  - [ ] Display grid spacing
-  - [ ] Display order sizes
-  - [ ] Display risk parameters
+- [x] Task 2: Create configuration display (AC: 1, 3)
+  - [x] Display trading pairs
+  - [x] Display grid spacing
+  - [x] Display order sizes
+  - [x] Display risk parameters
 
-- [ ] Task 3: Ensure read-only (AC: 2)
-  - [ ] No edit controls
-  - [ ] Visual indication of read-only
+- [x] Task 3: Ensure read-only (AC: 2)
+  - [x] No edit controls
+  - [x] Visual indication of read-only
 
-- [ ] Task 4: Add to tab navigation (AC: 4)
-  - [ ] Create "Configuration" tab
-  - [ ] Or collapsible section
+- [x] Task 4: Add to tab navigation (AC: 4)
+  - [x] Create "Configuration" tab
+  - [x] Or collapsible section
 
 ## Dev Notes
 
@@ -241,9 +241,30 @@ All values displayed as labels, not inputs. Visual cues:
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Completion Notes List
 
+- Created BotConfig, PairConfig, RiskConfig models in data_models.py
+- Added get_bot_config API method in api_client.py
+- Added bot_config field to state.py
+- Created configuration_view.py component with:
+  - General section (bot name, version, exchange)
+  - Trading pairs section with per-pair cards
+  - Risk management section
+  - Timing section (API timeout, poll interval)
+- All values displayed as labels (read-only)
+- "Read-only" badge in header indicates no edit capability
+- Enabled/Disabled badges for trading pairs
+- Added Configuration tab to main.py navigation
+- Monospace font for configuration values
+
 ### File List
+
+- dashboard/services/data_models.py (modified)
+- dashboard/services/api_client.py (modified)
+- dashboard/state.py (modified)
+- dashboard/components/configuration_view.py (created)
+- dashboard/main.py (modified)
+- dashboard/assets/css/theme.css (modified)
 

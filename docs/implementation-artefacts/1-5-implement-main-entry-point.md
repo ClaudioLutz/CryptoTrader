@@ -1,6 +1,6 @@
 # Story 1.5: Implement Main Entry Point
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -19,25 +19,25 @@ So that **the dashboard can be started with a simple command**.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Implement main() function (AC: 1, 2, 6)
-  - [ ] Import NiceGUI and config
-  - [ ] Configure ui.run() with port from config
-  - [ ] Set browser auto-open behavior
+- [x] Task 1: Implement main() function (AC: 1, 2, 6)
+  - [x] Import NiceGUI and config
+  - [x] Configure ui.run() with port from config
+  - [x] Set browser auto-open behavior
 
-- [ ] Task 2: Apply dark theme (AC: 4)
-  - [ ] Enable NiceGUI dark mode
-  - [ ] Import theme.css (from Story 1.3)
+- [x] Task 2: Apply dark theme (AC: 4)
+  - [x] Enable NiceGUI dark mode
+  - [x] Import theme.css (from Story 1.3)
 
-- [ ] Task 3: Create placeholder UI (AC: 3)
-  - [ ] Add page title "CryptoTrader Dashboard"
-  - [ ] Add placeholder header element
+- [x] Task 3: Create placeholder UI (AC: 3)
+  - [x] Add page title "CryptoTrader Dashboard"
+  - [x] Add placeholder header element
 
-- [ ] Task 4: Configure logging (AC: 5)
-  - [ ] Use logging module (not print)
-  - [ ] Log startup message with port number
+- [x] Task 4: Configure logging (AC: 5)
+  - [x] Use logging module (not print)
+  - [x] Log startup message with port number
 
-- [ ] Task 5: Add entry point guard (AC: 6)
-  - [ ] Add `if __name__ == "__main__":` block
+- [x] Task 5: Add entry point guard (AC: 6)
+  - [x] Add `if __name__ == "__main__":` block
 
 ## Dev Notes
 
@@ -161,9 +161,19 @@ if theme_path.exists():
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Completion Notes List
 
+- Implemented main() function with config.dashboard_port integration
+- ui.run() configured with dark=True, reload=False for stability
+- create_ui() function created for dashboard UI setup
+- load_theme() function loads CSS from assets/css/theme.css
+- Proper logging configured with logger.info() for startup message
+- Entry point guard (__name__ == "__main__") added
+- @ui.page("/") decorator for main route
+
 ### File List
+
+- dashboard/main.py (modified)
 

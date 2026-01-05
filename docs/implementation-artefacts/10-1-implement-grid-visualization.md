@@ -1,6 +1,6 @@
 # Story 10.1: Implement Grid Visualization
 
-Status: ready-for-dev
+Status: review
 
 **Version:** v2.0
 
@@ -20,22 +20,22 @@ So that **I can understand the buy/sell grid structure**.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Fetch grid configuration data
-  - [ ] Add API method for grid levels
-  - [ ] Define GridLevel data model
+- [x] Task 1: Fetch grid configuration data
+  - [x] Add API method for grid levels
+  - [x] Define GridLevel data model
 
-- [ ] Task 2: Create grid overlay on chart (AC: 1, 2, 5)
-  - [ ] Add horizontal lines for buy levels
-  - [ ] Add horizontal lines for sell levels
-  - [ ] Position relative to price chart
+- [x] Task 2: Create grid overlay on chart (AC: 1, 2, 5)
+  - [x] Add horizontal lines for buy levels
+  - [x] Add horizontal lines for sell levels
+  - [x] Position relative to price chart
 
-- [ ] Task 3: Highlight current price (AC: 3)
-  - [ ] Add current price line
-  - [ ] Style distinctively
+- [x] Task 3: Highlight current price (AC: 3)
+  - [x] Add current price line
+  - [x] Style distinctively
 
-- [ ] Task 4: Distinguish order states (AC: 4)
-  - [ ] Solid lines for open orders
-  - [ ] Dashed lines for filled orders
+- [x] Task 4: Distinguish order states (AC: 4)
+  - [x] Solid lines for open orders
+  - [x] Dashed lines for filled orders
 
 ## Dev Notes
 
@@ -206,9 +206,28 @@ $97,000 ─────────── BUY (filled, dashed)
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Completion Notes List
 
+- Created GridLevel and GridConfig models in data_models.py
+- Added get_grid_config API method in api_client.py
+- Created grid_visualization.py component with add_grid_overlay()
+- Buy levels: green horizontal lines
+- Sell levels: red horizontal lines
+- Open orders: solid lines with price annotations
+- Filled orders: dashed lines at 50% opacity
+- Current price: blue accent line with annotation
+- Added Grid checkbox toggle to price_chart.py header
+- Added show_grid_overlay state field
+- Grid overlay integrated into create_figure()
+
 ### File List
+
+- dashboard/services/data_models.py (modified)
+- dashboard/services/api_client.py (modified)
+- dashboard/state.py (modified)
+- dashboard/components/grid_visualization.py (created)
+- dashboard/components/price_chart.py (modified)
+- dashboard/assets/css/theme.css (modified)
 

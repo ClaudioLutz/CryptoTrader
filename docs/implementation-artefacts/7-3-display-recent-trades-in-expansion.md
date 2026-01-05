@@ -1,6 +1,6 @@
 # Story 7.3: Display Recent Trades in Expansion
 
-Status: ready-for-dev
+Status: review
 
 **Version:** v1.5
 
@@ -22,24 +22,24 @@ So that **I can understand recent trading activity**.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Add trades API method (AC: 7)
-  - [ ] Add `get_pair_trades(symbol, limit)` to APIClient
-  - [ ] Define Trade data model
+- [x] Task 1: Add trades API method (AC: 7)
+  - [x] Add `get_pair_trades(symbol, limit)` to APIClient
+  - [x] Define Trade data model
 
-- [ ] Task 2: Create trades list component (AC: 1-5)
-  - [ ] Display trade direction
-  - [ ] Display trade price
-  - [ ] Display trade amount
-  - [ ] Display trade timestamp
-  - [ ] Limit to 5 trades
+- [x] Task 2: Create trades list component (AC: 1-5)
+  - [x] Display trade direction
+  - [x] Display trade price
+  - [x] Display trade amount
+  - [x] Display trade timestamp
+  - [x] Limit to 5 trades
 
-- [ ] Task 3: Apply color coding (AC: 6)
-  - [ ] Green for buys
-  - [ ] Red for sells
+- [x] Task 3: Apply color coding (AC: 6)
+  - [x] Green for buys
+  - [x] Red for sells
 
-- [ ] Task 4: Integrate with expansion panel (AC: 7)
-  - [ ] Fetch when expanded
-  - [ ] Show alongside order details
+- [x] Task 4: Integrate with expansion panel (AC: 7)
+  - [x] Fetch when expanded
+  - [x] Show alongside order details
 
 ## Dev Notes
 
@@ -227,9 +227,18 @@ async def expansion_content(symbol: str) -> None:
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Completion Notes List
 
+- Used existing get_trades(symbol, limit) API method via state.refresh_trades()
+- Created _create_recent_trades() showing last 5 trades per symbol
+- Each trade row shows: direction icon, side label, price, amount, timestamp
+- Color coding: green border/text for buys, red for sells
+- On-demand fetching when row expands via _on_expansion_change handler
+
 ### File List
+
+- dashboard/components/pairs_table.py (modified)
+- dashboard/assets/css/theme.css (modified)
 
