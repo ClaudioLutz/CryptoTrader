@@ -479,14 +479,20 @@ class DashboardState:
 
         Called less frequently (every 5 seconds) for non-critical data.
         Behavior:
-        - Skip if WebSocket connected (ticker stream + user stream provide this data)
-        - Full refresh via REST if WebSocket offline
+        - Always fetch pairs/strategies data (WebSocket doesn't provide this)
+        - Skip price updates if WebSocket connected (ticker stream provides real-time prices)
         """
-        if not self._websocket_connected:
-            # WebSocket offline - full REST refresh
-            if not self._is_retrying:
-                await self.refresh()
-        # If WebSocket connected, data comes from streams - no action needed
+        # Always need to fetch pairs data - WebSocket only provides price updates
+        if self._api_client and not self._is_retrying:
+            try:
+                # Fetch pairs data from /api/strategies
+                self.pairs = await self._api_client.get_pairs()
+
+                # Update last_update timestamp
+                if self.pairs:
+                    self.last_update = self._to_local_time(datetime.now(timezone.utc))
+            except Exception as e:
+                logger.error("Tier 2 refresh failed: %s", str(e))
 
     async def _refresh_with_retry(self) -> None:
         """Refresh with automatic retry on failure (Story 6-4).
