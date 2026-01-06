@@ -94,3 +94,4 @@ secrets.json
 trading_dashboard/config.yaml
 !trading_dashboard/config.yaml.example
 uv.lock
+nul
