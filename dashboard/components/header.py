@@ -116,26 +116,48 @@ def _create_status_content() -> None:
 
 
 def _create_pnl_content() -> None:
-    """Create total P&L display with direction arrow (Story 3.4).
+    """Create professional 3-value P&L display (Phase 1 hardening).
 
-    Format: sign + currency + value + arrow
-    - Positive: green with up arrow
-    - Negative: red with down arrow
-    - Zero: gray, no arrow
+    Displays: Realized | Unrealized | Total
+    - Realized: Locked-in grid profits from completed cycles
+    - Unrealized: Mark-to-market floating P&L on open positions
+    - Total: Sum of realized + unrealized
     """
-    pnl = state.total_pnl
+    with ui.row().classes("pnl-breakdown gap-4"):
+        # Realized (Grid Profit)
+        with ui.column().classes("pnl-item"):
+            ui.label("Realized").classes("pnl-label text-xs")
+            _create_pnl_value(state.realized_pnl, "realized")
 
+        # Unrealized (Floating)
+        with ui.column().classes("pnl-item"):
+            ui.label("Unrealized").classes("pnl-label text-xs")
+            _create_pnl_value(state.unrealized_pnl, "unrealized")
+
+        # Total
+        with ui.column().classes("pnl-item"):
+            ui.label("Total").classes("pnl-label text-xs font-bold")
+            _create_pnl_value(state.total_pnl, "total")
+
+
+def _create_pnl_value(pnl: float, pnl_type: str) -> None:
+    """Create individual P&L value with styling.
+
+    Args:
+        pnl: P&L value (Decimal or float).
+        pnl_type: Type of P&L (realized, unrealized, total) for CSS classes.
+    """
     if pnl > 0:
         pnl_class = "pnl-positive"
-        pnl_text = f"+\u20ac{pnl:.2f} \u25b2"  # Up arrow
+        pnl_text = f"+\u20ac{pnl:.2f}"
     elif pnl < 0:
         pnl_class = "pnl-negative"
-        pnl_text = f"-\u20ac{abs(pnl):.2f} \u25bc"  # Down arrow
+        pnl_text = f"-\u20ac{abs(pnl):.2f}"
     else:
         pnl_class = "pnl-neutral"
-        pnl_text = f"\u20ac0.00"
+        pnl_text = "\u20ac0.00"
 
-    ui.label(pnl_text).classes(f"pnl-display {pnl_class}")
+    ui.label(pnl_text).classes(f"pnl-value {pnl_class} {pnl_type}")
 
 
 def _create_pair_count_content() -> None:

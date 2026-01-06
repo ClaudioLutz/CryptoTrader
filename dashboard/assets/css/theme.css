@@ -178,11 +178,37 @@ body {
   opacity: 1.0; /* Full attention */
 }
 
-/* P&L display styles */
+/* P&L display styles (Phase 1: 3-value breakdown) */
 .pnl-display {
   font-family: 'Roboto Mono', monospace;
   font-size: 16px;
   font-weight: 600;
+}
+
+/* Phase 1: Separated P&L display */
+.pnl-breakdown {
+  display: flex;
+  gap: 1rem;
+}
+
+.pnl-item {
+  text-align: center;
+}
+
+.pnl-label {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  margin-bottom: 2px;
+}
+
+.pnl-value {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.pnl-value.total {
+  font-size: 1.25rem;
 }
 
 /* Count displays */

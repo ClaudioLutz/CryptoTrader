@@ -10,6 +10,7 @@ from decimal import Decimal
 from typing import Any
 
 import httpx
+import pybreaker
 
 from dashboard.config import config
 from dashboard.services.data_models import (
@@ -26,6 +27,13 @@ from dashboard.services.data_models import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Circuit breaker for API fault tolerance
+exchange_breaker = pybreaker.CircuitBreaker(
+    fail_max=5,  # Open after 5 consecutive failures
+    reset_timeout=60,  # Try half-open after 60 seconds
+    name="BotAPICircuitBreaker",
+)
 
 
 class APIClient:
@@ -64,6 +72,7 @@ class APIClient:
             await self._client.aclose()
             self._client = None
 
+    @exchange_breaker
     async def get_health(self) -> HealthResponse | None:
         """Fetch bot health status from /health endpoint.
 
@@ -85,18 +94,22 @@ class APIClient:
                 uptime_seconds=int(data.get("uptime_seconds", 0)),
                 message=data.get("message"),
             )
+        except pybreaker.CircuitBreakerError:
+            logger.warning("Circuit breaker is OPEN - API calls blocked")
+            return None
         except httpx.RequestError as e:
             logger.error("Health request failed: connection error: %s", e)
-            return None
+            raise  # Let circuit breaker count this failure
         except httpx.HTTPStatusError as e:
             logger.error(
                 "Health request returned error status: %s", e.response.status_code
             )
-            return None
+            raise  # Let circuit breaker count this failure
         except Exception as e:
             logger.error("Health request failed: unexpected error: %s", e)
-            return None
+            raise  # Let circuit breaker count this failure
 
+    @exchange_breaker
     async def get_status(self) -> dict[str, Any] | None:
         """Fetch comprehensive bot status from /api/status endpoint.
 
@@ -111,10 +124,14 @@ class APIClient:
             response = await self._client.get("/api/status")
             response.raise_for_status()
             return response.json()
+        except pybreaker.CircuitBreakerError:
+            logger.warning("Circuit breaker is OPEN - API calls blocked")
+            return None
         except (httpx.RequestError, httpx.HTTPStatusError) as e:
             logger.error("Status request failed: %s", e)
-            return None
+            raise  # Let circuit breaker count this failure
 
+    @exchange_breaker
     async def get_pairs(self) -> list[PairData]:
         """Fetch all trading pair data from /api/strategies endpoint.
 
@@ -150,9 +167,12 @@ class APIClient:
                 )
 
             return pairs
+        except pybreaker.CircuitBreakerError:
+            logger.warning("Circuit breaker is OPEN - API calls blocked")
+            return []
         except (httpx.RequestError, httpx.HTTPStatusError) as e:
             logger.error("Pairs request failed: %s", e)
-            return []
+            raise  # Let circuit breaker count this failure
 
     async def _get_current_price(self, symbol: str) -> Decimal:
         """Fetch current price for a symbol from OHLCV endpoint.
@@ -181,6 +201,7 @@ class APIClient:
             logger.debug("Failed to get current price for %s: %s", symbol, e)
             return Decimal("0")
 
+    @exchange_breaker
     async def get_orders(self, symbol: str | None = None) -> list[OrderData]:
         """Fetch open orders from /api/orders endpoint.
 
@@ -214,10 +235,14 @@ class APIClient:
                 )
 
             return orders
+        except pybreaker.CircuitBreakerError:
+            logger.warning("Circuit breaker is OPEN - API calls blocked")
+            return []
         except (httpx.RequestError, httpx.HTTPStatusError) as e:
             logger.error("Orders request failed: %s", e)
-            return []
+            raise  # Let circuit breaker count this failure
 
+    @exchange_breaker
     async def get_trades(
         self, symbol: str | None = None, limit: int = 100
     ) -> list[TradeData]:
@@ -265,15 +290,19 @@ class APIClient:
                 )
 
             return trades
+        except pybreaker.CircuitBreakerError:
+            logger.warning("Circuit breaker is OPEN - API calls blocked")
+            return []
         except (httpx.RequestError, httpx.HTTPStatusError) as e:
             logger.error("Trades HTTP request failed (%s): %r", type(e).__name__, e)
-            return []
+            raise  # Let circuit breaker count this failure
         except Exception as e:
             logger.error("Trades request failed with %s: %r", type(e).__name__, e)
             import traceback
             logger.error("Traceback: %s", traceback.format_exc())
-            return []
+            raise  # Let circuit breaker count this failure
 
+    @exchange_breaker
     async def get_pnl(self, period: str = "daily") -> dict[str, Any]:
         """Fetch P&L summary from /api/pnl endpoint.
 
@@ -290,19 +319,28 @@ class APIClient:
             response = await self._client.get("/api/pnl", params={"period": period})
             response.raise_for_status()
             return response.json()
+        except pybreaker.CircuitBreakerError:
+            logger.warning("Circuit breaker is OPEN - API calls blocked")
+            return {"total_pnl": "0", "total_trades": 0}
         except (httpx.RequestError, httpx.HTTPStatusError) as e:
             logger.error("PnL request failed: %s", e)
-            return {"total_pnl": "0", "total_trades": 0}
+            raise  # Let circuit breaker count this failure
 
+    @exchange_breaker
     async def get_total_pnl(self) -> Decimal:
         """Fetch total P&L for today.
 
         Returns:
             Total P&L as Decimal, or 0 if request fails.
         """
-        pnl_data = await self.get_pnl(period="daily")
-        return Decimal(str(pnl_data.get("total_pnl", "0")))
+        try:
+            pnl_data = await self.get_pnl(period="daily")
+            return Decimal(str(pnl_data.get("total_pnl", "0")))
+        except pybreaker.CircuitBreakerError:
+            logger.warning("Circuit breaker is OPEN - API calls blocked")
+            return Decimal("0")
 
+    @exchange_breaker
     async def get_ohlcv(
         self,
         symbol: str = "BTC/USDT",
@@ -330,10 +368,14 @@ class APIClient:
             response.raise_for_status()
             data = response.json()
             return data.get("ohlcv", [])
+        except pybreaker.CircuitBreakerError:
+            logger.warning("Circuit breaker is OPEN - API calls blocked")
+            return []
         except (httpx.RequestError, httpx.HTTPStatusError) as e:
             logger.error("OHLCV request failed: %s", e)
-            return []
+            raise  # Let circuit breaker count this failure
 
+    @exchange_breaker
     async def get_grid_config(self, symbol: str) -> GridConfig | None:
         """Fetch grid configuration for a trading pair (Story 10.1).
 
@@ -371,10 +413,14 @@ class APIClient:
                 grid_spacing=Decimal(str(data.get("grid_spacing", "0"))),
                 total_levels=data.get("total_levels", len(levels)),
             )
+        except pybreaker.CircuitBreakerError:
+            logger.warning("Circuit breaker is OPEN - API calls blocked")
+            return None
         except (httpx.RequestError, httpx.HTTPStatusError) as e:
             logger.error("Grid config request failed: %s", e)
-            return None
+            raise  # Let circuit breaker count this failure
 
+    @exchange_breaker
     async def get_bot_config(self) -> BotConfig | None:
         """Fetch bot configuration (Story 10.2).
 
@@ -431,10 +477,14 @@ class APIClient:
                 api_timeout_ms=data.get("api_timeout_ms", 5000),
                 poll_interval_ms=data.get("poll_interval_ms", 1000),
             )
+        except pybreaker.CircuitBreakerError:
+            logger.warning("Circuit breaker is OPEN - API calls blocked")
+            return None
         except (httpx.RequestError, httpx.HTTPStatusError) as e:
             logger.error("Bot config request failed: %s", e)
-            return None
+            raise  # Let circuit breaker count this failure
 
+    @exchange_breaker
     async def get_dashboard_data(self) -> DashboardData:
         """Fetch aggregated dashboard data from multiple endpoints.
 
@@ -445,21 +495,32 @@ class APIClient:
             DashboardData with all available data. Fields will be None/empty
             if their respective API calls failed.
         """
-        health = await self.get_health()
-        pairs = await self.get_pairs()
-        total_pnl = await self.get_total_pnl()
+        try:
+            health = await self.get_health()
+            pairs = await self.get_pairs()
+            total_pnl = await self.get_total_pnl()
 
-        # Calculate total P&L percent (simplified - would need more data for accurate calc)
-        total_pnl_percent = Decimal("0")
+            # Calculate total P&L percent (simplified - would need more data for accurate calc)
+            total_pnl_percent = Decimal("0")
 
-        return DashboardData(
-            health=health,
-            pairs=pairs,
-            total_pnl=total_pnl,
-            total_pnl_percent=total_pnl_percent,
-            last_update=datetime.now() if health else None,
-            is_stale=health is None,
-        )
+            return DashboardData(
+                health=health,
+                pairs=pairs,
+                total_pnl=total_pnl,
+                total_pnl_percent=total_pnl_percent,
+                last_update=datetime.now() if health else None,
+                is_stale=health is None,
+            )
+        except pybreaker.CircuitBreakerError:
+            logger.warning("Circuit breaker is OPEN - API calls blocked")
+            return DashboardData(
+                health=None,
+                pairs=[],
+                total_pnl=Decimal("0"),
+                total_pnl_percent=Decimal("0"),
+                last_update=None,
+                is_stale=True,
+            )
 
 
 # Module-level singleton for convenience

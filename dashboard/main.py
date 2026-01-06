@@ -19,6 +19,8 @@ from dashboard.components.pairs_table import create_pairs_table
 from dashboard.components.timeframe_row import create_timeframe_row
 from dashboard.components.trade_history import create_trade_history_view
 from dashboard.config import config
+from dashboard.services.api_client import exchange_breaker
+from dashboard.services.websocket_service import BinanceWebSocketService
 from dashboard.state import state
 
 # Configure logging
@@ -38,24 +40,43 @@ def load_theme() -> None:
 
 
 async def setup_polling() -> None:
-    """Set up timer-based polling for data refresh (Epic 6).
+    """Set up timer-based polling for data refresh with WebSocket integration (Phase 1).
 
-    Implements tiered polling:
-    - Tier 1 (2s): Health, P&L (critical, real-time feel)
-    - Tier 2 (5s): Pairs table, Chart (important but less urgent)
+    Implements hybrid data flow:
+    - WebSocket: Real-time order/balance/ticker updates (primary)
+    - REST polling: Health checks + fallback when WebSocket unavailable
+    - Trade cache: Initialized BEFORE WebSocket to avoid race condition
     """
     # Initialize state and API client
     await state.initialize()
     logger.info("State initialized, starting polling timers")
 
-    # Tier 1: Health, P&L (2 seconds)
+    # Initialize trade cache from REST before starting WebSocket
+    await state._calculate_pnl_from_trades()
+    logger.info(
+        "Trade cache initialized with %d trades", len(state._trade_cache)
+    )
+
+    # Start WebSocket service (Phase 1 hardening)
+    ws_service = BinanceWebSocketService(state)
+    try:
+        await ws_service.start()
+        state._websocket_service = ws_service
+        state.set_websocket_connected(True)
+        logger.info("WebSocket streams started successfully")
+    except Exception as e:
+        logger.warning("WebSocket failed, using REST fallback: %s", str(e))
+        state.set_websocket_connected(False)
+
+    # REST polling as fallback (existing timers)
+    # Tier 1: Health (always REST) + P&L (from cache)
     ui.timer(
         config.poll_interval_tier1,
         state.refresh_tier1,
     )
     logger.debug("Tier 1 polling started (interval: %.1fs)", config.poll_interval_tier1)
 
-    # Tier 2: Pairs table, Chart (5 seconds)
+    # Tier 2: Pairs table, Chart (skipped when WebSocket connected)
     ui.timer(
         config.poll_interval_tier2,
         state.refresh_tier2,
@@ -64,7 +85,13 @@ async def setup_polling() -> None:
 
 
 async def shutdown_polling() -> None:
-    """Clean up resources on dashboard shutdown."""
+    """Clean up resources on dashboard shutdown (Phase 1: WebSocket cleanup)."""
+    # Stop WebSocket service if running
+    if state._websocket_service:
+        await state._websocket_service.stop()
+        logger.info("WebSocket service stopped")
+
+    # Shutdown state and API client
     await state.shutdown()
     logger.info("Dashboard state shutdown complete")
 
@@ -85,8 +112,17 @@ def create_ui() -> None:
     # Load custom theme CSS
     load_theme()
 
-    # Create fixed header strip (Epic 3)
-    create_header()
+    # Create fixed header strip (Epic 3) and store container for UI refresh
+    header_container = create_header()
+
+    # Register UI refresh callback for WebSocket updates (Phase 1, Issue #7 fix)
+    def refresh_ui() -> None:
+        """Refresh UI components when WebSocket pushes updates."""
+        # NiceGUI automatically handles refreshes via its internal WebSocket
+        # This callback can be used for forced refreshes if needed
+        pass
+
+    state.register_ui_refresh(refresh_ui)
 
     # Tab navigation (Story 9.1, 10.2)
     with ui.tabs().classes("dashboard-tabs w-full") as tabs:

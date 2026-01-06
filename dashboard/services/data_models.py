@@ -165,6 +165,29 @@ class DashboardData(BaseModel):
         return self.health is not None and self.health.status == "healthy"
 
 
+class PnLBreakdown(BaseModel):
+    """Separated P&L for professional display.
+
+    Attributes:
+        realized_pnl: Locked-in grid profits from completed cycles.
+        unrealized_pnl: Mark-to-market floating P&L on open positions.
+        total_pnl: Sum of realized + unrealized P&L.
+    """
+
+    realized_pnl: Decimal = Field(
+        default=Decimal("0"),
+        description="Locked-in grid profits",
+    )
+    unrealized_pnl: Decimal = Field(
+        default=Decimal("0"),
+        description="Mark-to-market floating P&L",
+    )
+    total_pnl: Decimal = Field(
+        default=Decimal("0"),
+        description="Sum of realized + unrealized",
+    )
+
+
 # Grid Visualization Models (Story 10.1)
 
 

@@ -12,7 +12,7 @@ import logging
 import time
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 from dashboard.services.api_client import APIClient
 from dashboard.services.data_models import (
@@ -58,6 +58,8 @@ class DashboardState:
         # Core data state
         self.health: HealthResponse | None = None
         self.pairs: list[PairData] = []
+        self.realized_pnl: Decimal = Decimal("0")  # Phase 1: Separated P&L
+        self.unrealized_pnl: Decimal = Decimal("0")  # Phase 1: Separated P&L
         self.total_pnl: Decimal = Decimal("0")
         self.total_pnl_percent: Decimal = Decimal("0")
         self.last_update: datetime | None = None
@@ -116,6 +118,16 @@ class DashboardState:
         # API client
         self._api_client: APIClient | None = None
 
+        # Trade cache for P&L calculation (Phase 1 hardening)
+        self._trade_cache: list[TradeData] = []
+        self._trade_cache_initialized: bool = False
+        self._cache_last_sync: datetime | None = None
+
+        # WebSocket integration (Phase 1 hardening)
+        self._websocket_service: Any | None = None
+        self._websocket_connected: bool = False
+        self._ui_refresh_callback: Callable[[], None] | None = None
+
     async def initialize(self) -> None:
         """Initialize API client. Call once on startup."""
         self._api_client = APIClient()
@@ -128,6 +140,48 @@ class DashboardState:
             await self._api_client.__aexit__(None, None, None)
             self._api_client = None
             logger.info("Dashboard state shutdown")
+
+    def register_ui_refresh(self, callback: Callable[[], None]) -> None:
+        """Register UI refresh callback for WebSocket updates (Issue #7 fix).
+
+        Args:
+            callback: Function to call when UI needs to refresh after WebSocket updates.
+        """
+        self._ui_refresh_callback = callback
+        logger.debug("UI refresh callback registered")
+
+    def set_websocket_connected(self, connected: bool) -> None:
+        """Update WebSocket connection state (called by WebSocketService).
+
+        Args:
+            connected: Whether WebSocket is connected.
+        """
+        self._websocket_connected = connected
+        if not connected:
+            logger.warning("WebSocket disconnected - falling back to REST polling")
+        else:
+            logger.info("WebSocket connected - reducing REST polling")
+
+    async def on_websocket_ticker(self, symbol: str, price: Decimal) -> None:
+        """Callback for WebSocket ticker updates - triggers UI refresh.
+
+        Args:
+            symbol: Trading pair symbol (e.g., "BTC/USDT").
+            price: Current price from ticker stream.
+        """
+        try:
+            # Update pair price in state
+            for pair in self.pairs:
+                if pair.symbol == symbol:
+                    pair.current_price = price
+                    break
+
+            # Trigger NiceGUI UI refresh if registered
+            if self._ui_refresh_callback:
+                self._ui_refresh_callback()
+
+        except Exception as e:
+            logger.error("Failed to handle WebSocket ticker for %s: %s", symbol, str(e))
 
     async def refresh(self) -> None:
         """Refresh all dashboard data from API with latency measurement.
@@ -188,8 +242,8 @@ class DashboardState:
     async def _calculate_pnl_from_trades(self) -> None:
         """Calculate P&L from actual trade history like the old dashboard.
 
-        Fetches trades from API and calculates realized/unrealized P&L
-        for each symbol, then aggregates for total P&L.
+        Uses cached trades (initialized on startup, updated by WebSocket).
+        Only fetches from API if cache not initialized.
         """
         from dashboard.services.pnl_calculator import (
             calculate_pnl_from_trades,
@@ -200,8 +254,18 @@ class DashboardState:
             return
 
         try:
-            # Fetch trades (limit 200 for reasonable P&L calculation)
-            all_trades = await self._api_client.get_trades(limit=200)
+            # Use trade cache (initialized on startup, updated by WebSocket)
+            if not self._trade_cache_initialized:
+                # First time: fetch from API
+                all_trades = await self._api_client.get_trades(limit=200)
+                self._trade_cache = all_trades
+                self._trade_cache_initialized = True
+                if all_trades:
+                    self._cache_last_sync = max(t.timestamp for t in all_trades)
+            else:
+                # Use cached trades (updated by WebSocket or periodic sync)
+                all_trades = self._trade_cache
+
             self.trades = all_trades
 
             if not all_trades:
@@ -225,6 +289,9 @@ class DashboardState:
                 calculate_portfolio_pnl(trades_by_symbol, current_prices)
             )
 
+            # Phase 1: Store separated P&L values
+            self.realized_pnl = total_realized
+            self.unrealized_pnl = total_unrealized
             self.total_pnl = total_pnl
             # Calculate percentage (rough estimate based on buy cost)
             total_buy_cost = sum(
@@ -260,6 +327,51 @@ class DashboardState:
 
         except Exception as e:
             logger.error("Failed to calculate P&L from trades: %s", str(e))
+
+    async def _update_trade_cache_from_websocket(self, trade_event: dict[str, Any]) -> None:
+        """Append WebSocket trade event to cache and recalculate P&L.
+
+        Args:
+            trade_event: executionReport event from Binance User Data Stream.
+        """
+        try:
+            # Parse trade event (Binance executionReport format)
+            trade = TradeData(
+                trade_id=str(trade_event.get("t", "")),  # Trade ID
+                symbol=trade_event.get("s", ""),  # Symbol
+                side="buy" if trade_event.get("S") == "BUY" else "sell",  # Side
+                price=Decimal(str(trade_event.get("p", "0"))),  # Price
+                amount=Decimal(str(trade_event.get("q", "0"))),  # Quantity
+                cost=Decimal(str(trade_event.get("p", "0")))
+                * Decimal(str(trade_event.get("q", "0"))),
+                fee=Decimal(str(trade_event.get("n", "0"))),  # Commission
+                timestamp=datetime.fromtimestamp(
+                    trade_event.get("T", 0) / 1000, tz=timezone.utc
+                ),  # Transaction time
+            )
+
+            # Append to cache
+            self._trade_cache.append(trade)
+            self._cache_last_sync = trade.timestamp
+
+            # Keep cache size manageable (last 500 trades)
+            if len(self._trade_cache) > 500:
+                self._trade_cache = self._trade_cache[-500:]
+
+            logger.debug(
+                "Trade cache updated: %s %s %.8f @ %.2f (cache size: %d)",
+                trade.side,
+                trade.symbol,
+                float(trade.amount),
+                float(trade.price),
+                len(self._trade_cache),
+            )
+
+            # Recalculate P&L from cache (zero API calls)
+            await self._calculate_pnl_from_trades()
+
+        except Exception as e:
+            logger.error("Failed to update trade cache from WebSocket: %s", str(e))
 
     def _calculate_timeframe_pnl(
         self,
@@ -341,22 +453,40 @@ class DashboardState:
                 self.pnl_30d_pct = tf_pct
 
     async def refresh_tier1(self) -> None:
-        """Refresh Tier 1 data only (health, P&L) with retry logic.
+        """Refresh Tier 1 data only (health, P&L) with REST fallback logic.
 
         Called frequently (every 2 seconds) for critical real-time data.
-        Includes connection recovery with exponential backoff (Story 6-4).
+        Behavior:
+        - Always check health via REST (no WebSocket equivalent)
+        - Always calculate P&L (uses cached trades, not API call)
+        - Skip fetching current prices if WebSocket connected (ticker stream provides)
         """
-        await self._refresh_with_retry()
+        if not self._websocket_connected:
+            # WebSocket offline - full refresh via REST
+            await self._refresh_with_retry()
+        else:
+            # WebSocket connected - only refresh health via REST
+            if self._api_client:
+                self.health = await self._api_client.get_health()
+                self.connection_status = (
+                    "connected" if self.health else self.connection_status
+                )
+            # P&L always calculated from cache (no API call)
+            await self._calculate_pnl_from_trades()
 
     async def refresh_tier2(self) -> None:
-        """Refresh Tier 2 data only (chart, table).
+        """Refresh Tier 2 data only (chart, table) with WebSocket fallback.
 
         Called less frequently (every 5 seconds) for non-critical data.
-        For MVP, refreshes all data. Can be optimized later.
+        Behavior:
+        - Skip if WebSocket connected (ticker stream + user stream provide this data)
+        - Full refresh via REST if WebSocket offline
         """
-        # Only refresh if not already retrying (tier1 handles recovery)
-        if not self._is_retrying:
-            await self.refresh()
+        if not self._websocket_connected:
+            # WebSocket offline - full REST refresh
+            if not self._is_retrying:
+                await self.refresh()
+        # If WebSocket connected, data comes from streams - no action needed
 
     async def _refresh_with_retry(self) -> None:
         """Refresh with automatic retry on failure (Story 6-4).
