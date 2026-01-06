@@ -10,9 +10,11 @@ import asyncio
 import logging
 import os
 from decimal import Decimal
+from pathlib import Path
 from typing import Any, Callable
 
 from binance import AsyncClient, BinanceSocketManager
+from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
@@ -54,9 +56,16 @@ class BinanceWebSocketService:
             Exception: If credentials missing or connection fails.
         """
         try:
+            # Load .env file to get exchange credentials
+            # (Dashboard config only loads DASHBOARD_* variables)
+            env_path = Path(__file__).parent.parent.parent / ".env"
+            if env_path.exists():
+                load_dotenv(env_path)
+
             # Read bot's Binance credentials from environment
             api_key = os.getenv("EXCHANGE__API_KEY", "")
             api_secret = os.getenv("EXCHANGE__API_SECRET", "")
+            testnet = os.getenv("EXCHANGE__TESTNET", "false").lower() == "true"
 
             if not api_key or not api_secret:
                 raise ValueError(
@@ -64,7 +73,8 @@ class BinanceWebSocketService:
                 )
 
             # Create Binance AsyncClient
-            self._client = await AsyncClient.create(api_key, api_secret, testnet=False)
+            self._client = await AsyncClient.create(api_key, api_secret, testnet=testnet)
+            logger.info("Connecting to Binance %s", "Testnet" if testnet else "Production")
             self._bm = BinanceSocketManager(self._client, user_timeout=60)
             self._running = True
 
