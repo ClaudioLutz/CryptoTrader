@@ -223,6 +223,14 @@ body {
   padding: 0 16px;
 }
 
+/* Centered container for pair cards - use more horizontal space */
+.centered-container {
+  max-width: 95%;
+  margin-left: auto;
+  margin-right: auto;
+  padding: 0 16px;
+}
+
 .pairs-table {
   width: 100%;
   background-color: var(--surface) !important; /* #0f3460 */
@@ -339,6 +347,7 @@ body {
   border-radius: 0 !important;
   background-color: var(--surface) !important;
   border-bottom: 1px solid var(--bg-secondary);
+  width: 100%;
 }
 
 .pair-expansion .q-expansion-item__container {
@@ -387,9 +396,11 @@ body {
 
 /* Expansion content panel (Story 7.1 AC1) */
 .expansion-content {
-  padding: 16px;
+  padding: 16px 24px;
   background-color: var(--bg-secondary);
   border-left: 3px solid var(--accent);
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .expansion-grid {
@@ -402,7 +413,8 @@ body {
   display: flex;
   flex-wrap: nowrap;
   align-items: stretch;
-  gap: 16px;
+  gap: 24px;
+  width: 100%;
 }
 
 /* Section labels */
@@ -417,22 +429,22 @@ body {
 
 /* Order details section (Story 7.2) */
 .order-details-section {
-  min-width: 150px;
-  max-width: 180px;
+  min-width: 120px;
+  max-width: 160px;
   flex-shrink: 0;
 }
 
-/* Mini chart section - center column */
+/* Mini chart section - center column, takes most space */
 .mini-chart-section {
-  flex: 1;
-  min-width: 300px;
+  flex: 2;
+  min-width: 400px;
   display: flex;
   flex-direction: column;
 }
 
 .mini-price-chart {
   width: 100%;
-  height: 150px;
+  height: 180px;
   border-radius: 4px;
 }
 
@@ -473,26 +485,27 @@ body {
   margin-top: 4px;
 }
 
-/* Trades section (Story 7.3) */
+/* Trades section (Story 7.3) - wider to fit more content */
 .trades-section {
-  min-width: 250px;
-  max-width: 320px;
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 280px;
+  max-width: 450px;
 }
 
 .trades-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
-/* Trade row styling (Story 7.3 AC6) */
+/* Trade row styling (Story 7.3 AC6) - compact rows */
 .trade-row {
-  padding: 6px 12px;
+  padding: 3px 8px;
   background-color: rgba(0, 0, 0, 0.2);
-  border-radius: 4px;
+  border-radius: 3px;
   font-family: 'Roboto Mono', monospace;
-  font-size: 12px;
+  font-size: 11px;
+  min-height: 24px;
 }
 
 .trade-row.trade-buy {
@@ -504,7 +517,7 @@ body {
 }
 
 .trade-icon {
-  font-size: 14px;
+  font-size: 12px;
 }
 
 .trade-buy .trade-icon,
@@ -858,4 +871,65 @@ body {
 
 .login-error.visible {
   visibility: visible;
+}
+
+/* ============================================
+   Scrollable Trades Container
+   ============================================ */
+
+.trades-scroll-container {
+  max-height: 160px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+/* Scrollbar styling for trades container */
+.trades-scroll-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.trades-scroll-container::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+  border-radius: 3px;
+}
+
+.trades-scroll-container::-webkit-scrollbar-thumb {
+  background: var(--surface);
+  border-radius: 3px;
+}
+
+.trades-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+
+/* ============================================
+   Chart Timeframe Controls
+   ============================================ */
+
+.chart-controls {
+  display: flex;
+  gap: 4px;
+}
+
+.timeframe-btn {
+  background-color: var(--surface) !important;
+  color: var(--text-secondary) !important;
+  font-size: 11px !important;
+  padding: 2px 8px !important;
+  min-width: 36px !important;
+  height: 24px !important;
+}
+
+.timeframe-btn:hover {
+  background-color: rgba(74, 158, 255, 0.2) !important;
+  color: var(--text-primary) !important;
+}
+
+.timeframe-active {
+  background-color: var(--accent) !important;
+  color: var(--text-primary) !important;
+  font-size: 11px !important;
+  padding: 2px 8px !important;
+  min-width: 36px !important;
+  height: 24px !important;
 }

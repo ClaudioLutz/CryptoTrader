@@ -266,7 +266,12 @@ class APIClient:
 
             return trades
         except (httpx.RequestError, httpx.HTTPStatusError) as e:
-            logger.error("Trades request failed: %s", e)
+            logger.error("Trades HTTP request failed (%s): %r", type(e).__name__, e)
+            return []
+        except Exception as e:
+            logger.error("Trades request failed with %s: %r", type(e).__name__, e)
+            import traceback
+            logger.error("Traceback: %s", traceback.format_exc())
             return []
 
     async def get_pnl(self, period: str = "daily") -> dict[str, Any]:

@@ -1,9 +1,9 @@
 """CryptoTrader Dashboard - Pairs Table Component.
 
-Displays all trading pairs in a compact table format with expandable row details.
-Stories 4.1-4.3: Table structure, data display, hover state.
-Stories 7.1-7.3: Row expansion toggle, order details, recent trades.
-Includes mini price chart inside each card for better visualization.
+Displays all trading pairs in expandable cards with:
+- Mini price chart with timeframe selector
+- Orders summary
+- Scrollable recent trades list
 """
 
 from datetime import datetime, timedelta, timezone
@@ -17,27 +17,13 @@ from dashboard.state import state
 from dashboard.services.data_models import OrderData, TradeData
 
 
-# Column definitions for the pairs table
-COLUMNS = [
-    {"name": "expand", "label": "", "field": "expand", "align": "center"},
-    {"name": "symbol", "label": "Symbol", "field": "symbol", "align": "left"},
-    {"name": "price", "label": "Price", "field": "price", "align": "right"},
-    {"name": "pnl", "label": "P&L", "field": "pnl", "align": "right"},
-    {"name": "position", "label": "Position", "field": "position", "align": "right"},
-    {"name": "orders", "label": "Orders", "field": "orders", "align": "center"},
-]
+# Available chart timeframes
+TIMEFRAMES = ["1h", "4h", "1d", "1w"]
+TIMEFRAME_LABELS = {"1h": "1H", "4h": "4H", "1d": "1D", "1w": "1W"}
 
 
 def format_price(price: Decimal, symbol: str) -> str:
-    """Format price with appropriate precision based on magnitude.
-
-    Args:
-        price: The current price.
-        symbol: Trading pair symbol (for context).
-
-    Returns:
-        Formatted price string with $ prefix and thousands separator.
-    """
+    """Format price with appropriate precision based on magnitude."""
     if price >= 100:
         return f"${price:,.2f}"
     elif price >= 1:
@@ -47,14 +33,7 @@ def format_price(price: Decimal, symbol: str) -> str:
 
 
 def format_pnl(pnl: Decimal) -> tuple[str, str]:
-    """Format P&L with sign and color class.
-
-    Args:
-        pnl: Profit/loss value.
-
-    Returns:
-        Tuple of (formatted_text, css_class).
-    """
+    """Format P&L with sign and color class."""
     if pnl > 0:
         return f"+\u20ac{pnl:.2f}", "pnl-positive"
     elif pnl < 0:
@@ -64,37 +43,20 @@ def format_pnl(pnl: Decimal) -> tuple[str, str]:
 
 
 def format_position(size: Decimal, symbol: str) -> str:
-    """Format position size with base asset symbol.
-
-    Args:
-        size: Position size.
-        symbol: Trading pair symbol.
-
-    Returns:
-        Formatted position string with asset suffix.
-    """
+    """Format position size with base asset symbol."""
     base_asset = symbol.split("/")[0] if "/" in symbol else symbol
     return f"{size} {base_asset}"
 
 
 def create_pairs_table() -> None:
-    """Create the all-pairs table with expandable row details (Epic 7).
-
-    Displays trading pairs with: Symbol, Price, P&L, Position, Orders.
-    Clicking a row expands it to show order details, mini chart, and recent trades.
-    """
-    with ui.element("div").classes("pairs-table-container"):
-        # Create expandable rows for each pair
+    """Create the all-pairs table with expandable row details."""
+    with ui.element("div").classes("pairs-table-container centered-container"):
         for pair in state.pairs:
             _create_pair_row(pair.symbol)
 
 
 def _create_pair_row(symbol: str) -> None:
-    """Create a single expandable pair row.
-
-    Args:
-        symbol: Trading pair symbol.
-    """
+    """Create a single expandable pair row with closure-based container management."""
     pair = next((p for p in state.pairs if p.symbol == symbol), None)
     if not pair:
         return
@@ -102,11 +64,10 @@ def _create_pair_row(symbol: str) -> None:
     pnl_text, pnl_class = format_pnl(pair.pnl_today)
     is_expanded = state.is_row_expanded(symbol)
 
-    # Get order counts for this specific pair
-    symbol_orders = [o for o in state.orders if o.symbol == symbol]
+    # Get order counts for this specific pair from per-symbol cache
+    symbol_orders = state.orders_by_symbol.get(symbol, [])
     order_count = len(symbol_orders)
 
-    # Icon rotates when expanded (Story 7.1 AC5)
     expand_icon = "expand_more" if is_expanded else "chevron_right"
 
     with ui.expansion(
@@ -114,92 +75,135 @@ def _create_pair_row(symbol: str) -> None:
         icon=expand_icon,
         value=is_expanded,
     ).classes("pair-expansion").props("dense") as expansion:
-        # Header content (custom slot)
+        # Header content
         with expansion.add_slot("header"):
             with ui.row().classes("pair-row-header items-center w-full gap-4"):
-                # Expand icon
                 ui.icon(expand_icon).classes(
                     f"expand-icon {'rotated' if is_expanded else ''}"
                 )
-                # Symbol
                 ui.label(symbol).classes("pair-symbol")
-                # Price
                 ui.label(format_price(pair.current_price, symbol)).classes(
                     "pair-price text-right"
                 )
-                # P&L
                 ui.label(pnl_text).classes(f"pair-pnl {pnl_class} text-right")
-                # Position
                 ui.label(format_position(pair.position_size, symbol)).classes(
                     "pair-position text-right"
                 )
-                # Orders count for this pair specifically
                 ui.label(str(order_count)).classes("pair-orders text-center")
 
-        # Expansion content - Orders, Chart, and Recent trades
-        with ui.element("div").classes("expansion-content"):
-            _create_expansion_content(symbol)
+        # Expansion content container (local scope for closure)
+        with ui.element("div").classes("expansion-content") as container:
+            _render_expansion_content(symbol)
 
-        # Handle expansion toggle (Story 7.1 AC3, AC4)
-        expansion.on_value_change(lambda e, s=symbol: _on_expansion_change(e, s))
+        # Create async handlers with closure over container
+        async def on_expansion_change(event, sym=symbol, cont=container) -> None:
+            """Handle expansion toggle with on-demand data fetching."""
+            if event.value:
+                # Fetch data on demand
+                await state.refresh_orders(sym)
+                await state.refresh_trades(sym, limit=100)
+
+                # Get current timeframe or default to 1h
+                timeframe = state.chart_timeframe_by_symbol.get(sym, "1h")
+                await state.refresh_ohlcv(sym, timeframe=timeframe, limit=48)
+                state.expanded_rows.add(sym)
+
+                # Rebuild the expansion content with new data
+                cont.clear()
+                with cont:
+                    _render_expansion_content(sym)
+            else:
+                state.expanded_rows.discard(sym)
+
+        async def change_timeframe(timeframe: str, sym=symbol, cont=container) -> None:
+            """Change chart timeframe and refresh data."""
+            state.chart_timeframe_by_symbol[sym] = timeframe
+            await state.refresh_ohlcv(sym, timeframe=timeframe, limit=48)
+
+            # Rebuild the expansion content
+            cont.clear()
+            with cont:
+                _render_expansion_content(sym)
+
+        # Store the change_timeframe function for use in chart controls
+        container.change_timeframe = change_timeframe
+
+        expansion.on_value_change(on_expansion_change)
 
 
-async def _on_expansion_change(event, symbol: str) -> None:
-    """Handle expansion toggle with on-demand data fetching.
-
-    Args:
-        event: NiceGUI value change event.
-        symbol: Trading pair symbol.
-    """
-    if event.value:
-        # Expanding - fetch data on demand (Story 7.2 AC4, Story 7.3 AC7)
-        await state.refresh_orders(symbol)
-        await state.refresh_trades(symbol, limit=10)
-        await state.refresh_ohlcv(symbol, timeframe="1h", limit=48)
-        state.expanded_rows.add(symbol)
-    else:
-        state.expanded_rows.discard(symbol)
-
-
-def _create_expansion_content(symbol: str) -> None:
-    """Create expansion panel content with orders, mini chart, and recent trades.
-
-    Uses a 3-column layout to better utilize horizontal space:
-    [Orders] | [Mini Price Chart] | [Recent Trades]
-
-    Args:
-        symbol: Trading pair symbol.
-    """
+def _render_expansion_content(symbol: str) -> None:
+    """Render expansion content with current data."""
     with ui.row().classes("expansion-grid-3col w-full gap-4"):
-        # Left column: Order details section (Story 7.2)
         with ui.column().classes("order-details-section"):
             _create_order_details(symbol)
 
-        # Center column: Mini price chart with trade markers
         with ui.column().classes("mini-chart-section flex-grow"):
-            _create_mini_chart(symbol)
+            _create_chart_with_controls(symbol)
 
-        # Right column: Recent trades section (Story 7.3)
         with ui.column().classes("trades-section"):
             _create_recent_trades(symbol)
 
 
+def _create_chart_with_controls(symbol: str) -> None:
+    """Create chart with timeframe selector that updates dynamically."""
+    # Create chart container first (will be populated by rebuild function)
+    with ui.element("div").classes("chart-wrapper") as chart_container:
+        pass  # Will be filled by _rebuild_chart
+
+    def _rebuild_chart(sym: str = symbol, cont: ui.element = chart_container) -> None:
+        """Rebuild the chart with current data."""
+        cont.clear()
+        with cont:
+            _create_mini_chart(sym)
+
+    async def _change_timeframe(
+        timeframe: str,
+        sym: str = symbol,
+        rebuild_fn=_rebuild_chart,
+        buttons_cont: ui.element = None,
+    ) -> None:
+        """Change timeframe, fetch new data, and rebuild chart."""
+        state.chart_timeframe_by_symbol[sym] = timeframe
+        await state.refresh_ohlcv(sym, timeframe=timeframe, limit=48)
+        rebuild_fn()
+        # Update button styles
+        if buttons_cont:
+            buttons_cont.clear()
+            with buttons_cont:
+                _create_timeframe_buttons(sym, _change_timeframe, buttons_cont)
+
+    # Timeframe selector row
+    with ui.row().classes("chart-controls items-center gap-2 mb-2") as buttons_container:
+        _create_timeframe_buttons(symbol, _change_timeframe, buttons_container)
+
+    # Initial chart render
+    _rebuild_chart()
+
+
+def _create_timeframe_buttons(
+    symbol: str, change_fn, buttons_cont: ui.element
+) -> None:
+    """Create timeframe selector buttons."""
+    current_tf = state.chart_timeframe_by_symbol.get(symbol, "1h")
+    for tf in TIMEFRAMES:
+        is_active = tf == current_tf
+        btn = ui.button(
+            TIMEFRAME_LABELS[tf],
+            on_click=lambda t=tf: change_fn(t, symbol, buttons_cont=buttons_cont),
+        ).props(f"dense {'flat' if not is_active else ''} size=sm")
+        if is_active:
+            btn.classes("timeframe-active")
+        else:
+            btn.classes("timeframe-btn")
+
+
 def _create_mini_chart(symbol: str) -> None:
-    """Create a mini price chart for the trading pair with trade markers.
+    """Create a mini price chart for the trading pair."""
+    ohlcv_data = state.ohlcv_by_symbol.get(symbol, [])
+    symbol_trades = state.trades_by_symbol.get(symbol, [])
 
-    Args:
-        symbol: Trading pair symbol.
-    """
-    # Get OHLCV data for this symbol
-    ohlcv_data = state.ohlcv if state.ohlcv else []
-
-    # Get trades for this symbol
-    symbol_trades = [t for t in state.trades if t.symbol == symbol]
-
-    # Create the mini chart figure
     fig = _create_mini_figure(symbol, ohlcv_data, symbol_trades)
 
-    # Create the chart
     chart = ui.plotly(fig).classes("mini-price-chart")
     chart._props["config"] = {
         "scrollZoom": False,
@@ -215,40 +219,29 @@ def _create_mini_figure(
     ohlcv_data: list[dict[str, Any]],
     trades: list[TradeData],
 ) -> go.Figure:
-    """Create a mini Plotly figure for the pair card.
-
-    Args:
-        symbol: Trading pair symbol.
-        ohlcv_data: OHLCV candlestick data.
-        trades: Trade data for markers.
-
-    Returns:
-        Configured Plotly figure.
-    """
+    """Create a mini Plotly figure for the pair card."""
     fig = go.Figure()
 
-    # Extract price data
     if ohlcv_data:
         timestamps = [d.get("timestamp", d.get("time")) for d in ohlcv_data]
         closes = [float(d.get("close", d.get("price", 0))) for d in ohlcv_data]
     else:
-        # Generate sample data if no OHLCV available
         now = datetime.now(timezone.utc)
         timestamps = [now - timedelta(hours=i) for i in range(48, 0, -1)]
-        closes = [97000.0] * 48  # Placeholder
+        closes = []
 
-    # Add price line
-    fig.add_trace(go.Scatter(
-        x=timestamps,
-        y=closes,
-        mode="lines",
-        name="Price",
-        line=dict(color="#4a9eff", width=1.5),
-        hovertemplate="$%{y:,.2f}<extra></extra>",
-    ))
+    if closes:
+        fig.add_trace(go.Scatter(
+            x=timestamps,
+            y=closes,
+            mode="lines",
+            name="Price",
+            line=dict(color="#4a9eff", width=1.5),
+            hovertemplate="$%{y:,.2f}<extra></extra>",
+        ))
 
-    # Calculate y-axis range to include both prices and trade markers
-    all_prices = list(closes)
+    # Calculate y-axis range
+    all_prices = list(closes) if closes else []
     if trades:
         trade_prices = [float(t.price) for t in trades]
         all_prices.extend(trade_prices)
@@ -256,8 +249,7 @@ def _create_mini_figure(
     if all_prices:
         min_price = min(all_prices)
         max_price = max(all_prices)
-        price_range = max_price - min_price
-        # Add 5% padding
+        price_range = max_price - min_price if max_price > min_price else max_price * 0.01
         y_min = min_price - price_range * 0.05
         y_max = max_price + price_range * 0.05
     else:
@@ -275,11 +267,7 @@ def _create_mini_figure(
                 y=[float(t.price) for t in buys],
                 mode="markers",
                 name="Buy",
-                marker=dict(
-                    symbol="triangle-up",
-                    size=8,
-                    color="#00c853",
-                ),
+                marker=dict(symbol="triangle-up", size=8, color="#00c853"),
                 hovertemplate="BUY $%{y:,.2f}<extra></extra>",
             ))
 
@@ -289,21 +277,16 @@ def _create_mini_figure(
                 y=[float(t.price) for t in sells],
                 mode="markers",
                 name="Sell",
-                marker=dict(
-                    symbol="triangle-down",
-                    size=8,
-                    color="#ff5252",
-                ),
+                marker=dict(symbol="triangle-down", size=8, color="#ff5252"),
                 hovertemplate="SELL $%{y:,.2f}<extra></extra>",
             ))
 
-    # Compact layout for mini chart
     fig.update_layout(
         template="plotly_dark",
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        height=150,
-        margin=dict(l=45, r=10, t=5, b=25),
+        height=180,
+        margin=dict(l=50, r=10, t=5, b=25),
         showlegend=False,
         xaxis=dict(
             showgrid=False,
@@ -321,38 +304,40 @@ def _create_mini_figure(
         hovermode="x unified",
     )
 
+    if not closes:
+        fig.add_annotation(
+            text="Loading chart data...",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5,
+            showarrow=False,
+            font=dict(color="#6b7280", size=12),
+        )
+
     return fig
 
 
 def _create_order_details(symbol: str) -> None:
-    """Create order details panel showing buy/sell counts and price range.
-
-    Args:
-        symbol: Trading pair symbol.
-    """
+    """Create order details panel."""
     ui.label("ORDERS").classes("section-label")
 
-    # Filter orders for this symbol
-    symbol_orders = [o for o in state.orders if o.symbol == symbol]
+    # Use per-symbol orders cache
+    symbol_orders = state.orders_by_symbol.get(symbol, [])
     buy_orders = [o for o in symbol_orders if o.side.lower() == "buy"]
     sell_orders = [o for o in symbol_orders if o.side.lower() == "sell"]
 
     buy_count = len(buy_orders)
     sell_count = len(sell_orders)
 
-    # Calculate price range (Story 7.2 AC3)
     lowest_buy = min((o.price for o in buy_orders), default=Decimal("0"))
     highest_sell = max((o.price for o in sell_orders), default=Decimal("0"))
 
     with ui.row().classes("order-summary gap-6"):
-        # Buy orders count
         with ui.column().classes("order-group"):
             ui.label("BUY").classes("order-label text-xs")
             ui.label(str(buy_count)).classes("order-count buy-count")
             if lowest_buy > 0:
                 ui.label(f"from ${lowest_buy:,.2f}").classes("price-range-text")
 
-        # Sell orders count
         with ui.column().classes("order-group"):
             ui.label("SELL").classes("order-label text-xs")
             ui.label(str(sell_count)).classes("order-count sell-count")
@@ -361,51 +346,39 @@ def _create_order_details(symbol: str) -> None:
 
 
 def _create_recent_trades(symbol: str) -> None:
-    """Create recent trades list showing last 5 trades.
-
-    Args:
-        symbol: Trading pair symbol.
-    """
+    """Create scrollable recent trades list."""
     ui.label("RECENT TRADES").classes("section-label")
 
-    # Filter trades for this symbol and limit to 5 (Story 7.3 AC1)
-    symbol_trades = [t for t in state.trades if t.symbol == symbol][:5]
+    # Use per-symbol trades cache - show all trades (scrollable)
+    symbol_trades = state.trades_by_symbol.get(symbol, [])
 
     if not symbol_trades:
         ui.label("No recent trades").classes("text-tertiary text-sm")
         return
 
-    with ui.column().classes("trades-list gap-1"):
-        for trade in symbol_trades:
-            _create_trade_row(trade)
+    # Scrollable container for trades
+    with ui.element("div").classes("trades-scroll-container"):
+        with ui.column().classes("trades-list gap-1"):
+            for trade in symbol_trades:
+                _create_trade_row(trade)
 
 
 def _create_trade_row(trade: TradeData) -> None:
-    """Create a single trade row with direction, price, amount, timestamp.
-
-    Args:
-        trade: Trade data.
-    """
-    # Direction styling (Story 7.3 AC2, AC6)
+    """Create a single trade row."""
     side_class = "trade-buy" if trade.side.lower() == "buy" else "trade-sell"
     side_icon = "arrow_upward" if trade.side.lower() == "buy" else "arrow_downward"
 
-    with ui.row().classes(f"trade-row {side_class} items-center gap-3"):
-        # Direction icon
-        ui.icon(side_icon).classes("trade-icon text-sm")
-        # Side label
+    with ui.row().classes(f"trade-row {side_class} items-center gap-2"):
+        ui.icon(side_icon).classes("trade-icon")
         ui.label(trade.side.upper()).classes("trade-side")
-        # Price (Story 7.3 AC3)
         ui.label(f"${trade.price:,.2f}").classes("trade-price")
-        # Amount (Story 7.3 AC4)
         ui.label(f"{trade.amount}").classes("trade-amount")
-        # Timestamp (Story 7.3 AC5)
-        ui.label(trade.timestamp.strftime("%H:%M:%S")).classes("trade-time")
+        ui.label(trade.timestamp.strftime("%H:%M")).classes("trade-time")
 
 
 def create_pairs_table_placeholder() -> None:
     """Create a placeholder table when no data is available."""
-    with ui.element("div").classes("pairs-table-container"):
+    with ui.element("div").classes("pairs-table-container centered-container"):
         with ui.card().classes("pairs-table-empty"):
             ui.label("No trading pairs available").classes("text-secondary")
             ui.label("Waiting for data from trading bot...").classes(

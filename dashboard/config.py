@@ -39,9 +39,9 @@ class DashboardConfig(BaseSettings):
         description="Base URL for the trading bot REST API",
     )
     api_timeout: float = Field(
-        default=5.0,
+        default=15.0,
         ge=1.0,
-        le=30.0,
+        le=60.0,
         description="Timeout in seconds for API requests",
     )
 

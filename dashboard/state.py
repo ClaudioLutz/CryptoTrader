@@ -98,6 +98,12 @@ class DashboardState:
         self.orders: list[OrderData] = []
         self.trades: list[TradeData] = []
         self.ohlcv: list[dict[str, Any]] = []
+        # Per-symbol caches
+        self.ohlcv_by_symbol: dict[str, list[dict[str, Any]]] = {}
+        self.orders_by_symbol: dict[str, list[OrderData]] = {}
+        self.trades_by_symbol: dict[str, list[TradeData]] = {}
+        # Chart timeframe per symbol (default 1h)
+        self.chart_timeframe_by_symbol: dict[str, str] = {}
 
         # Grid and configuration data (Story 10.1, 10.2)
         self.grid_config: GridConfig | None = None
@@ -194,8 +200,8 @@ class DashboardState:
             return
 
         try:
-            # Fetch all trades
-            all_trades = await self._api_client.get_trades(limit=500)
+            # Fetch trades (limit 200 for reasonable P&L calculation)
+            all_trades = await self._api_client.get_trades(limit=200)
             self.trades = all_trades
 
             if not all_trades:
@@ -244,7 +250,7 @@ class DashboardState:
             # Calculate timeframe P&L (1H, 24H, 7D, 30D)
             self._calculate_timeframe_pnl(all_trades, current_prices)
 
-            logger.debug(
+            logger.info(
                 "P&L calculated from %d trades: realized=%.2f unrealized=%.2f total=%.2f",
                 len(all_trades),
                 float(total_realized),
@@ -401,49 +407,77 @@ class DashboardState:
             self._is_retrying = False
             logger.error("Max retries exceeded, marking offline")
 
-    async def refresh_orders(self, symbol: str | None = None) -> None:
+    async def refresh_orders(self, symbol: str | None = None) -> list[OrderData]:
         """Refresh open orders (Tier 3 - on-demand).
 
         Args:
             symbol: Optional symbol filter.
+
+        Returns:
+            List of orders.
         """
         if not self._api_client:
-            return
+            return []
 
-        self.orders = await self._api_client.get_orders(symbol)
-        logger.debug("Orders refreshed: %d orders", len(self.orders))
+        orders = await self._api_client.get_orders(symbol)
+        self.orders = orders
+        if symbol:
+            self.orders_by_symbol[symbol] = orders
+        logger.debug("Orders refreshed: %d orders for %s", len(orders), symbol or "all")
+        return orders
 
-    async def refresh_trades(self, symbol: str | None = None, limit: int = 50) -> None:
+    async def refresh_trades(self, symbol: str | None = None, limit: int = 100) -> list[TradeData]:
         """Refresh recent trades (Tier 3 - on-demand).
 
         Args:
-            symbol: Optional symbol filter.
-            limit: Maximum number of trades.
+            symbol: Optional symbol filter (filtered client-side).
+            limit: Maximum number of trades to fetch from API.
+
+        Returns:
+            List of trades (filtered by symbol if provided).
         """
         if not self._api_client:
-            return
+            return []
 
-        self.trades = await self._api_client.get_trades(symbol, limit)
-        logger.debug("Trades refreshed: %d trades", len(self.trades))
+        # Fetch all trades without symbol filter (API may not support it)
+        all_trades = await self._api_client.get_trades(None, limit)
+        self.trades = all_trades
+
+        # Filter by symbol client-side if requested
+        if symbol:
+            symbol_trades = [t for t in all_trades if t.symbol == symbol]
+            self.trades_by_symbol[symbol] = symbol_trades
+            logger.info("Trades for card: %d trades for %s (from %d total)",
+                        len(symbol_trades), symbol, len(all_trades))
+            return symbol_trades
+
+        logger.debug("Trades refreshed: %d trades", len(all_trades))
+        return all_trades
 
     async def refresh_ohlcv(
         self,
         symbol: str = "BTC/USDT",
         timeframe: str = "1h",
         limit: int = 100,
-    ) -> None:
+    ) -> list[dict[str, Any]]:
         """Refresh OHLCV chart data.
 
         Args:
             symbol: Trading pair symbol.
             timeframe: Candlestick timeframe.
             limit: Number of candles.
+
+        Returns:
+            List of OHLCV candles.
         """
         if not self._api_client:
-            return
+            return []
 
-        self.ohlcv = await self._api_client.get_ohlcv(symbol, timeframe, limit)
-        logger.debug("OHLCV refreshed: %d candles for %s", len(self.ohlcv), symbol)
+        ohlcv_data = await self._api_client.get_ohlcv(symbol, timeframe, limit)
+        self.ohlcv = ohlcv_data
+        self.ohlcv_by_symbol[symbol] = ohlcv_data  # Store per symbol
+        logger.debug("OHLCV refreshed: %d candles for %s", len(ohlcv_data), symbol)
+        return ohlcv_data
 
     async def refresh_full_status(self) -> None:
         """Refresh full API status response for advanced components."""

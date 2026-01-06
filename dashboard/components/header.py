@@ -11,14 +11,6 @@ from nicegui import ui
 from dashboard.state import state
 
 
-# Module-level refreshable containers for header components
-_status_container = None
-_pnl_container = None
-_pairs_container = None
-_orders_container = None
-_timestamp_container = None
-
-
 def create_header() -> None:
     """Create the fixed header strip with status slots.
 
@@ -31,68 +23,56 @@ def create_header() -> None:
     - Story 3.4: Total P&L display
     - Story 3.5: Pair count and order count
 
-    Uses refreshable components that auto-update every 2 seconds.
+    Uses closures to ensure per-client container references for multi-client support.
     """
-    global _status_container, _pnl_container, _pairs_container, _orders_container, _timestamp_container
-
+    # Create containers in local scope (per-client)
     with ui.header().classes("fixed-header"):
         with ui.row().classes("header-content items-center justify-between w-full"):
             # Status indicator slot (Story 3.2)
-            with ui.element("div").classes("header-slot status-slot") as _status_container:
+            with ui.element("div").classes("header-slot status-slot") as status_container:
                 _create_status_content()
 
             # P&L display slot (Story 3.4)
-            with ui.element("div").classes("header-slot pnl-slot") as _pnl_container:
+            with ui.element("div").classes("header-slot pnl-slot") as pnl_container:
                 _create_pnl_content()
 
             # Pair count slot (Story 3.5)
-            with ui.element("div").classes("header-slot pairs-slot") as _pairs_container:
+            with ui.element("div").classes("header-slot pairs-slot") as pairs_container:
                 _create_pair_count_content()
 
             # Order count slot (Story 3.5)
-            with ui.element("div").classes("header-slot orders-slot") as _orders_container:
+            with ui.element("div").classes("header-slot orders-slot") as orders_container:
                 _create_order_count_content()
 
             # Timestamp slot (Story 3.3)
-            with ui.element("div").classes("header-slot timestamp-slot") as _timestamp_container:
+            with ui.element("div").classes("header-slot timestamp-slot") as timestamp_container:
                 _create_timestamp_content()
+
+    # Create refresh function with closure over local containers
+    def refresh_header() -> None:
+        """Refresh all header components with current state data."""
+        status_container.clear()
+        with status_container:
+            _create_status_content()
+
+        pnl_container.clear()
+        with pnl_container:
+            _create_pnl_content()
+
+        pairs_container.clear()
+        with pairs_container:
+            _create_pair_count_content()
+
+        orders_container.clear()
+        with orders_container:
+            _create_order_count_content()
+
+        timestamp_container.clear()
+        with timestamp_container:
+            _create_timestamp_content()
 
     # Set up auto-refresh timer (every 2 seconds to match tier1 polling)
     ui.timer(2.0, refresh_header)
-
-
-def refresh_header() -> None:
-    """Refresh all header components with current state data.
-
-    Called by timer every 2 seconds to update header values.
-    Clears existing content and recreates with fresh state data.
-    """
-    global _status_container, _pnl_container, _pairs_container, _orders_container, _timestamp_container
-
-    if _status_container:
-        _status_container.clear()
-        with _status_container:
-            _create_status_content()
-
-    if _pnl_container:
-        _pnl_container.clear()
-        with _pnl_container:
-            _create_pnl_content()
-
-    if _pairs_container:
-        _pairs_container.clear()
-        with _pairs_container:
-            _create_pair_count_content()
-
-    if _orders_container:
-        _orders_container.clear()
-        with _orders_container:
-            _create_order_count_content()
-
-    if _timestamp_container:
-        _timestamp_container.clear()
-        with _timestamp_container:
-            _create_timestamp_content()
 
 
 def _create_status_content() -> None:
