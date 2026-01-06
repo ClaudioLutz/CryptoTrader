@@ -10,7 +10,7 @@ Epic 6: Includes latency logging, retry logic, and cleanup for stability.
 import asyncio
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Literal
 
@@ -241,6 +241,9 @@ class DashboardState:
                     pair.pnl_today = pair_pnl.total_pnl
                     pair.position_size = pair_pnl.holdings
 
+            # Calculate timeframe P&L (1H, 24H, 7D, 30D)
+            self._calculate_timeframe_pnl(all_trades, current_prices)
+
             logger.debug(
                 "P&L calculated from %d trades: realized=%.2f unrealized=%.2f total=%.2f",
                 len(all_trades),
@@ -251,6 +254,85 @@ class DashboardState:
 
         except Exception as e:
             logger.error("Failed to calculate P&L from trades: %s", str(e))
+
+    def _calculate_timeframe_pnl(
+        self,
+        all_trades: list[TradeData],
+        current_prices: dict[str, Decimal],
+    ) -> None:
+        """Calculate P&L for different timeframes (1H, 24H, 7D, 30D).
+
+        Filters trades by timestamp and calculates P&L for each period.
+
+        Args:
+            all_trades: All trades from API.
+            current_prices: Current prices for each symbol.
+        """
+        from dashboard.services.pnl_calculator import calculate_portfolio_pnl
+
+        now = datetime.now(timezone.utc)
+
+        # Define timeframes
+        timeframes = [
+            ("1h", timedelta(hours=1)),
+            ("24h", timedelta(hours=24)),
+            ("7d", timedelta(days=7)),
+            ("30d", timedelta(days=30)),
+        ]
+
+        for tf_name, tf_delta in timeframes:
+            cutoff = now - tf_delta
+
+            # Filter trades within the timeframe
+            # Handle both timezone-aware and naive timestamps
+            tf_trades = []
+            for t in all_trades:
+                if not t.timestamp:
+                    continue
+                # Make timestamp timezone-aware if naive
+                ts = t.timestamp
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                if ts >= cutoff:
+                    tf_trades.append(t)
+
+            if tf_trades:
+                # Group by symbol
+                trades_by_symbol: dict[str, list] = {}
+                for trade in tf_trades:
+                    if trade.symbol not in trades_by_symbol:
+                        trades_by_symbol[trade.symbol] = []
+                    trades_by_symbol[trade.symbol].append(trade)
+
+                # Calculate P&L for this timeframe
+                _, _, tf_pnl, _ = calculate_portfolio_pnl(
+                    trades_by_symbol, current_prices
+                )
+
+                # Calculate total buy cost for percentage
+                tf_buy_cost = sum(
+                    t.cost if t.cost else t.price * t.amount
+                    for t in tf_trades
+                    if t.side.lower() == "buy"
+                )
+                tf_pct = (tf_pnl / tf_buy_cost * 100) if tf_buy_cost > 0 else Decimal("0")
+            else:
+                tf_pnl = Decimal("0")
+                tf_pct = Decimal("0")
+
+            # Update state attributes
+            if tf_name == "1h":
+                self.pnl_1h = tf_pnl
+                self.pnl_1h_pct = tf_pct
+            elif tf_name == "24h":
+                self.pnl_24h = tf_pnl
+                self.pnl_24h_pct = tf_pct
+            elif tf_name == "7d":
+                self.pnl_7d = tf_pnl
+                self.pnl_7d_pct = tf_pct
+            elif tf_name == "30d":
+                self.pnl_30d = tf_pnl
+                self.pnl_30d_pct = tf_pct
 
     async def refresh_tier1(self) -> None:
         """Refresh Tier 1 data only (health, P&L) with retry logic.

@@ -16,7 +16,6 @@ from dashboard.auth import check_auth, create_login_page, is_auth_enabled
 from dashboard.components.configuration_view import create_configuration_view
 from dashboard.components.header import create_header
 from dashboard.components.pairs_table import create_pairs_table
-from dashboard.components.price_chart import create_price_chart
 from dashboard.components.timeframe_row import create_timeframe_row
 from dashboard.components.trade_history import create_trade_history_view
 from dashboard.config import config
@@ -103,11 +102,9 @@ def create_ui() -> None:
 
             # Main content area
             with ui.column().classes("w-full p-4"):
-                # Pairs table (Epic 4, 7)
+                # Pairs table with embedded mini charts (Epic 4, 7)
+                # Charts are now inside each pair card for better UX
                 create_pairs_table()
-
-                # Price chart (Epic 5, 8, 10.1)
-                create_price_chart()
 
         # Trade History tab content (Epic 9)
         with ui.tab_panel(history_tab).classes("history-panel"):
