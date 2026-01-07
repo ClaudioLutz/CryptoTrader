@@ -105,7 +105,14 @@ class HealthCheckServer:
         """Start health check server."""
         self._runner = web.AppRunner(self._app)
         await self._runner.setup()
-        site = web.TCPSite(self._runner, self._host, self._port)
+        # Enable address reuse to avoid "address already in use" errors
+        # Note: reuse_port not supported on Windows, only reuse_address
+        site = web.TCPSite(
+            self._runner,
+            self._host,
+            self._port,
+            reuse_address=True,
+        )
         await site.start()
         logger.info(
             "health_server_started",
