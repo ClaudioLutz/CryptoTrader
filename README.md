@@ -1,18 +1,20 @@
 # CryptoTrader
 
-A modular, production-grade cryptocurrency trading bot with grid strategy support and a real-time Streamlit dashboard.
+A modular, production-grade cryptocurrency trading bot with grid strategy support and a real-time NiceGUI dashboard.
 
 ## Features
 
 - **Grid Trading Strategy**: Automated buy/sell at predefined price levels with arithmetic or geometric spacing
-- **Multiple Exchange Support**: Built on CCXT for exchange abstraction (Binance, testnet support)
+- **Multiple Exchange Support**: Built on CCXT for exchange abstraction (Binance mainnet and testnet)
 - **Dry-Run Mode**: Test strategies without risking real capital
-- **Real-Time Dashboard**: Streamlit-based UI for monitoring, analysis, and configuration
+- **Real-Time Dashboard**: NiceGUI-based web UI for monitoring, P&L tracking, and configuration
+- **WebSocket Integration**: Real-time price updates and order notifications
 - **Risk Management**: Circuit breakers, position sizing, stop-loss, and drawdown protection
-- **State Persistence**: SQLite/PostgreSQL-backed state for crash recovery
+- **State Persistence**: SQLite-backed state with automatic reconciliation for crash recovery
 - **Async Architecture**: High-performance async/await design with rate limiting
 - **Structured Logging**: JSON logging with structlog for production monitoring
-- **Alerting**: Telegram and Discord notification support
+- **Clock Skew Handling**: Automatic time synchronization with exchange servers
+- **Alerting**: Telegram and Discord notification support (optional)
 
 ## Architecture
 
@@ -28,10 +30,12 @@ src/crypto_bot/
 ├── backtest/            # Backtesting framework
 └── utils/               # Retry, alerting, health checks
 
-trading_dashboard/       # Streamlit dashboard
-├── app.py               # Dashboard entry point
-├── components/          # Auth, API client, state
-└── pages/               # Dashboard, positions, history, risk, grid, config
+dashboard/               # NiceGUI dashboard
+├── main.py              # Dashboard entry point
+├── components/          # UI components (header, charts, tables)
+├── services/            # API client, WebSocket service, P&L calculator
+├── auth.py              # Optional password authentication
+└── config.py            # Dashboard configuration
 ```
 
 ## Requirements
@@ -96,19 +100,60 @@ pip install -e ".[dev]"
 
 ## Quick Start
 
+### Option 1: Using Startup Scripts (Recommended)
+
+**Windows:**
+```cmd
+# Start the bot (with API on port 8080)
+start_bot.bat
+
+# In another terminal, start the dashboard
+start_dashboard.bat
+
+# To stop the bot
+stop_bot.bat
+```
+
+**Linux/Mac:**
 ```bash
-# Start in dry-run mode (no real trades)
-crypto-bot --dry-run
+# Start the bot (with API on port 8080)
+./start_bot.sh
+
+# In another terminal, start the dashboard
+./start_dashboard.sh
+
+# To stop the bot
+./stop_bot.sh
+```
+
+### Option 2: Manual Start
+
+```bash
+# Start bot in dry-run mode (no real trades)
+python -m crypto_bot.main --dry-run --api-port 8080
 
 # With a custom symbol
-crypto-bot --symbol ETH/USDT --dry-run
+python -m crypto_bot.main --symbol ETH/USDT --dry-run --api-port 8080
 
 # Enable verbose logging
-crypto-bot --dry-run --log-level DEBUG
+python -m crypto_bot.main --dry-run --log-level DEBUG --api-port 8080
 
-# With custom config file
-crypto-bot -c config/config.yaml
+# Without API server (headless)
+python -m crypto_bot.main --no-api
 ```
+
+### Accessing the Dashboard
+
+Once both bot and dashboard are running, open your browser to:
+```
+http://localhost:8081
+```
+
+The dashboard provides:
+- Real-time balance and P&L tracking
+- Live price charts with grid visualization
+- Active orders and trade history
+- Configuration management
 
 ## Live Trading
 
@@ -166,38 +211,158 @@ Options:
 
 ## Dashboard
 
-The trading dashboard provides real-time monitoring and analysis.
+The NiceGUI dashboard provides real-time monitoring, analysis, and configuration.
 
-### Setup
+### Running the Dashboard
 
+**Option 1: Using startup script (recommended)**
 ```bash
-cd trading_dashboard
-pip install -r requirements.txt
+# Windows
+start_dashboard.bat
 
-# Create auth config
-cp config.yaml.example config.yaml
-# Edit config.yaml with your credentials
+# Linux/Mac
+./start_dashboard.sh
 ```
 
-### Run Dashboard
-
+**Option 2: Manual start**
 ```bash
-# Make sure the bot is running first (provides the API)
-crypto-bot --dry-run
-
-# In another terminal, start the dashboard
-cd trading_dashboard
-streamlit run app.py
+python -m dashboard.main
 ```
+
+The dashboard will start on **port 8081** and requires the bot API to be running on **port 8080**.
+
+### Port Configuration
+
+- **Bot API:** Port 8080 (configurable with `--api-port`)
+- **Bot Health Server:** Port 8081 (set in `.env` as `HEALTH__PORT`)
+- **Dashboard:** Port 8081 (set via `DASHBOARD_PORT` environment variable)
+
+Note: The bot can run with `--no-api` flag for headless operation (dashboard won't work in this mode).
 
 ### Dashboard Features
 
-- **Live Metrics**: Real-time P&L, equity curve, balance
-- **Positions & Orders**: Open positions and pending order management
-- **Trade History**: Historical trades with filtering and export
-- **Risk Management**: Circuit breaker status, risk metrics
-- **Grid Visualization**: Interactive grid level charts
-- **Configuration**: Bot settings (read-only by default for safety)
+- **Live Metrics**: Real-time P&L, balance, unrealized gains
+- **Price Charts**: Multi-timeframe charts (1H, 4H, 1D, 1W) with grid level visualization
+- **Order Management**: View active buy/sell orders with current prices
+- **Trade History**: Complete trade history with fills and execution details
+- **WebSocket Updates**: Real-time order updates and balance changes via Binance WebSocket
+- **Configuration**: Manage bot settings, API keys, and risk parameters
+- **Optional Authentication**: Password-protect dashboard access (configurable)
+
+### Dashboard Configuration
+
+Create or edit `.env` to configure dashboard settings:
+
+```ini
+# Dashboard Settings
+DASHBOARD_PORT=8081
+DASHBOARD_API_BASE_URL=http://localhost:8080
+DASHBOARD_POLL_INTERVAL_TIER1=2.0    # Health, P&L refresh rate (seconds)
+DASHBOARD_POLL_INTERVAL_TIER2=5.0    # Chart, table refresh rate (seconds)
+
+# Optional Authentication
+DASHBOARD_AUTH_ENABLED=false
+DASHBOARD_AUTH_PASSWORD=your_secure_password
+DASHBOARD_AUTH_SESSION_HOURS=24
+```
+
+## Troubleshooting
+
+### Clock Skew / Timestamp Errors
+
+If you see errors like:
+```
+InvalidNonce: binance {"code":-1021,"msg":"Timestamp for this request was 1000ms ahead of the server's time."}
+```
+
+**Solution:** The bot automatically syncs with Binance server time using CCXT's `load_time_difference()`. This handles system clock differences up to several minutes. No manual intervention needed - the fix is built-in.
+
+**Technical Details:** See [docs/stories/20260107131500-fix-binance-timestamp-sync-for-clock-skew.md](docs/stories/20260107131500-fix-binance-timestamp-sync-for-clock-skew.md)
+
+### Port Already in Use
+
+If you see:
+```
+OSError: [WinError 10048] Only one usage of each socket address is normally permitted
+```
+
+**Solutions:**
+1. Stop existing bot processes: Run `stop_bot.bat` (Windows) or `./stop_bot.sh` (Linux/Mac)
+2. Check what's using the port:
+   ```bash
+   # Windows
+   netstat -ano | findstr :8080
+
+   # Linux/Mac
+   lsof -i :8080
+   ```
+3. Kill the process using the port:
+   ```bash
+   # Windows
+   taskkill /PID <pid> /F
+
+   # Linux/Mac
+   kill <pid>
+   ```
+
+### Log File Locked Error
+
+If `start_bot.bat` fails with "The process cannot access the file because it is being used by another process":
+
+**Solutions:**
+1. Close the log file if open in VS Code or another editor
+2. Stop all Python processes: `stop_bot.bat` or manually via Task Manager
+3. Rename or delete the locked log file:
+   ```bash
+   # Windows
+   ren logs\bot_output.log logs\bot_output_old.log
+
+   # Linux/Mac
+   mv logs/bot_output.log logs/bot_output_old.log
+   ```
+
+### Bot Not Trading
+
+If the bot is running but not placing trades:
+
+1. **Check strategy state in database**
+   - Strategy may be in `stopped: true` state from previous stop-loss trigger
+   - Reset in database or delete `trading.db` to start fresh (loses history)
+
+2. **Check balance**
+   - Verify sufficient USDT balance for grid orders
+   - Grid requires capital for multiple buy orders
+
+3. **Check current price**
+   - Price must be within grid range to place orders
+   - If price is outside grid bounds, adjust configuration
+
+4. **Check logs**
+   ```bash
+   tail -f logs/bot_output.log
+   ```
+   Look for:
+   - `grid_order_placed` - orders being created
+   - `order_placement_failed` - errors placing orders
+   - `circuit_breaker_tripped` - risk limits triggered
+
+### Dashboard Shows No Data
+
+If dashboard loads but shows no metrics:
+
+1. **Verify bot API is running**
+   ```bash
+   curl http://localhost:8080/health
+   ```
+   Should return: `{"status": "healthy", ...}`
+
+2. **Check bot was started with API enabled**
+   - Use `start_bot.bat` or `python -m crypto_bot.main --api-port 8080`
+   - **Don't use** `--no-api` flag when running with dashboard
+
+3. **Verify dashboard is configured correctly**
+   - Check `.env`: `DASHBOARD_API_BASE_URL=http://localhost:8080`
+   - Dashboard should show "HEALTHY" indicator when connected
 
 ## Development
 
@@ -257,12 +422,37 @@ crypto-bot-security
 crypto-bot-audit
 ```
 
+## Startup Scripts
+
+The repository includes convenience scripts for starting and stopping the bot:
+
+### Windows (`.bat` files)
+- **`start_bot.bat`** - Start bot with API on port 8080
+- **`start_dashboard.bat`** - Start dashboard on port 8081
+- **`stop_bot.bat`** - Cleanly stop all bot processes
+
+### Linux/Mac (`.sh` files)
+- **`start_bot.sh`** - Start bot with API on port 8080
+- **`start_dashboard.sh`** - Start dashboard on port 8081
+- **`stop_bot.sh`** - Cleanly stop all bot processes
+
+All scripts:
+- Check for existing processes before starting
+- Create logs directory if missing
+- Archive large log files automatically
+- Append to logs (don't overwrite on restart)
+- Handle port conflicts gracefully
+
 ## Project Documentation
 
 Detailed documentation is available in the `docs/` folder:
 - `docs/001-initial-setup-plan/` - Architecture and implementation plan
-- `docs/002-streamlit-dashboard/` - Dashboard design and epics
-- `docs/stories/` - Change documentation
+- `docs/002-streamlit-dashboard/` - Dashboard design and epics (historical - now using NiceGUI)
+- `docs/stories/` - Change documentation and story files
+
+### Recent Stories
+- `20260107131500-fix-binance-timestamp-sync-for-clock-skew.md` - Clock skew handling
+- Additional stories document all major changes and fixes
 
 ## License
 

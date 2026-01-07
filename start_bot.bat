@@ -5,8 +5,8 @@ echo === Trading Bot Startup Script ===
 echo Time: %date% %time%
 echo.
 
-set BOT_PORT=8081
-REM Dashboard uses 8080
+set BOT_PORT=8080
+REM Dashboard uses 8081
 set LOG_FILE=logs\bot_output.log
 set PID_FILE=logs\bot.pid
 

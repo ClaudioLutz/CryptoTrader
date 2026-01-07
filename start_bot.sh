@@ -3,7 +3,7 @@
 
 set -e  # Exit on error
 
-BOT_PORT=8081  # Dashboard uses 8080
+BOT_PORT=8080  # Dashboard uses 8081
 LOG_FILE="logs/bot_output.log"
 PID_FILE="logs/bot.pid"
 
