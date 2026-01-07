@@ -261,27 +261,14 @@ def setup_signal_handlers(shutdown: GracefulShutdown) -> None:
 # =============================================================================
 
 # Multi-pair grid configurations
+# Adjusted for $50 balance - trading only SOL/USDT with $45 investment
 GRID_CONFIGS = [
-    {
-        "symbol": "BTC/USDT",
-        "lower_price": Decimal("88000"),
-        "upper_price": Decimal("94000"),
-        "num_grids": 10,
-        "total_investment": Decimal("300"),
-    },
-    {
-        "symbol": "ETH/USDT",
-        "lower_price": Decimal("2900"),
-        "upper_price": Decimal("3400"),
-        "num_grids": 10,
-        "total_investment": Decimal("200"),
-    },
     {
         "symbol": "SOL/USDT",
         "lower_price": Decimal("120"),
         "upper_price": Decimal("150"),
-        "num_grids": 8,
-        "total_investment": Decimal("150"),
+        "num_grids": 6,
+        "total_investment": Decimal("45"),
     },
 ]
 

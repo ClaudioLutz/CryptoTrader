@@ -91,6 +91,19 @@ class CCXTExchange(BaseExchange):
             if self._settings.testnet:
                 self._exchange.set_sandbox_mode(True)
 
+            # Sync time with Binance server using CCXT's built-in method
+            # This is critical when system clock is ahead/behind server time
+            try:
+                await self._exchange.load_time_difference()
+                time_diff = self._exchange.options.get('timeDifference', 0)
+                self._logger.info(
+                    "time_sync",
+                    time_difference_ms=time_diff,
+                    message="Synchronized with exchange server time",
+                )
+            except Exception as e:
+                self._logger.warning("time_sync_failed", error=str(e))
+
             # Pre-load markets to cache symbol info
             self._markets = await self._exchange.load_markets()
 
