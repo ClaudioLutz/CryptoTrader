@@ -213,6 +213,13 @@ Options:
 
 The NiceGUI dashboard provides real-time monitoring, analysis, and configuration.
 
+### Dashboard Requirements
+
+Install the dashboard dependencies:
+```bash
+pip install -r dashboard/requirements.txt
+```
+
 ### Running the Dashboard
 
 **Option 1: Using startup script (recommended)**

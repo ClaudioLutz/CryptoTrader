@@ -1,25 +1,6 @@
 # CLAUDE.md
 
-## Always Search the web for relevant information (if useful)
-
-## Use Context7 for Up-to-Date Documentation
-
-When working with external libraries, frameworks, or APIs, add **"use context7"** to your prompt to fetch current documentation. This ensures code examples and API usage are accurate and not outdated.
-
-**When to use:**
-- Working with ccxt, pandas, numpy, or any trading/data libraries
-- Using React, Next.js, or rapidly evolving frameworks
-- Unsure about current API syntax or deprecated methods
-- Need version-specific code examples
-
-**Example prompts:**
-- "How do I fetch OHLCV data with ccxt? use context7"
-- "Show me pandas DataFrame filtering syntax use context7"
-
-**When NOT needed:**
-- General Python/TypeScript questions
-- Working with your own codebase
-- Stable, well-documented concepts
+## Always Search the web for relevant information (it mostly is useful)
 
 ## Change Documentation (required)
 
@@ -56,6 +37,3 @@ What could go wrong, and how to revert/mitigate.
 ### When a story is NOT required
 - Pure formatting (whitespace), typo fixes in comments/docs, or non-functional refactors that do not change behavior.
   - If in doubt, create a story.
-
-
-## Always commit and push to git (required)
