@@ -402,10 +402,11 @@ async def main() -> int:
     if args.log_level:
         settings.log_level = args.log_level
 
-    # Initialize logging
+    # Initialize logging with file rotation
     configure_logging(
         log_level=settings.log_level,
         json_output=settings.json_logs,
+        log_file="logs/crypto_bot.log",
     )
     logger = get_logger("main")
 

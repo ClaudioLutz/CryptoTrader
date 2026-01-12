@@ -110,8 +110,8 @@ def configure_logging(
     log_level: str = "INFO",
     json_output: bool = True,
     log_file: Optional[str] = None,
-    max_bytes: int = 10_000_000,  # 10MB
-    backup_count: int = 5,
+    backup_count: int = 30,
+    rotation_interval: str = "H",
 ) -> None:
     """Configure structlog for production use.
 
@@ -119,8 +119,8 @@ def configure_logging(
         log_level: The minimum log level (DEBUG, INFO, WARNING, ERROR, CRITICAL).
         json_output: If True, output JSON logs. If False, use colored console output.
         log_file: Optional path to log file for persistent logging.
-        max_bytes: Maximum size of log file before rotation (default 10MB).
-        backup_count: Number of backup files to keep (default 5).
+        backup_count: Number of backup files to keep (default 30).
+        rotation_interval: Time interval for rotation - 'H' for hourly, 'D' for daily (default 'H').
     """
     # Get numeric log level
     numeric_level = getattr(logging, log_level.upper(), logging.INFO)
@@ -179,7 +179,7 @@ def configure_logging(
 
     # File handler with rotation (if specified)
     if log_file:
-        add_file_handler(log_file, max_bytes, backup_count, numeric_level)
+        add_file_handler(log_file, backup_count, rotation_interval, numeric_level)
 
     # Configure structlog
     structlog.configure(
@@ -193,26 +193,28 @@ def configure_logging(
 
 def add_file_handler(
     log_file: str,
-    max_bytes: int = 10_000_000,
-    backup_count: int = 5,
+    backup_count: int = 30,
+    when: str = "H",
     level: int = logging.INFO,
 ) -> None:
-    """Add rotating file handler for persistent logs.
+    """Add time-based rotating file handler for persistent logs.
 
     Args:
         log_file: Path to the log file.
-        max_bytes: Maximum size before rotation (default 10MB).
-        backup_count: Number of backup files to keep.
+        backup_count: Number of backup files to keep (default 30).
+        when: Rotation interval - 'H' for hourly, 'D' for daily (default 'H').
         level: Minimum log level for file handler.
     """
     # Ensure log directory exists
     log_path = Path(log_file)
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
-    handler = logging.handlers.RotatingFileHandler(
+    handler = logging.handlers.TimedRotatingFileHandler(
         log_file,
-        maxBytes=max_bytes,
+        when=when,
+        interval=1,
         backupCount=backup_count,
+        utc=True,
     )
     handler.setLevel(level)
     handler.setFormatter(logging.Formatter("%(message)s"))

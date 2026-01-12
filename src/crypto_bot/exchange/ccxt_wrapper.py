@@ -1,5 +1,6 @@
 """CCXT wrapper with error handling, rate limiting, and retry logic."""
 
+import time
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -8,6 +9,9 @@ import ccxt.async_support as ccxt
 import structlog
 
 from crypto_bot.config.settings import ExchangeSettings
+
+# Re-sync time with exchange every 5 minutes
+TIME_SYNC_INTERVAL_SECONDS = 300
 from crypto_bot.exchange.base_exchange import (
     OHLCV,
     AuthenticationError,
@@ -44,6 +48,7 @@ class CCXTExchange(BaseExchange):
         self._settings = settings
         self._exchange: ccxt.Exchange | None = None
         self._markets: dict[str, Any] = {}
+        self._last_time_sync: float = 0
         self._logger = logger.bind(
             component="ccxt_exchange",
             exchange=settings.name,
@@ -93,16 +98,7 @@ class CCXTExchange(BaseExchange):
 
             # Sync time with Binance server using CCXT's built-in method
             # This is critical when system clock is ahead/behind server time
-            try:
-                await self._exchange.load_time_difference()
-                time_diff = self._exchange.options.get('timeDifference', 0)
-                self._logger.info(
-                    "time_sync",
-                    time_difference_ms=time_diff,
-                    message="Synchronized with exchange server time",
-                )
-            except Exception as e:
-                self._logger.warning("time_sync_failed", error=str(e))
+            await self._sync_time()
 
             # Pre-load markets to cache symbol info
             self._markets = await self._exchange.load_markets()
@@ -124,6 +120,26 @@ class CCXTExchange(BaseExchange):
             await self._exchange.close()
             self._exchange = None
             self._logger.info("exchange_disconnected")
+
+    async def _sync_time(self) -> None:
+        """Sync local time with exchange server time."""
+        try:
+            await self._exchange.load_time_difference()
+            self._last_time_sync = time.time()
+            time_diff = self._exchange.options.get("timeDifference", 0)
+            self._logger.info(
+                "time_sync",
+                time_difference_ms=time_diff,
+                message="Synchronized with exchange server time",
+            )
+        except Exception as e:
+            self._logger.warning("time_sync_failed", error=str(e))
+
+    async def ensure_time_sync(self) -> None:
+        """Re-sync time if interval has passed. Call before sensitive operations."""
+        if time.time() - self._last_time_sync > TIME_SYNC_INTERVAL_SECONDS:
+            self._logger.debug("time_sync_interval_reached")
+            await self._sync_time()
 
     @retry_with_backoff(max_retries=3, base_delay=1.0)
     async def fetch_ticker(self, symbol: str) -> Ticker:
@@ -228,6 +244,7 @@ class CCXTExchange(BaseExchange):
     @retry_with_backoff(max_retries=3, base_delay=1.0)
     async def fetch_open_orders(self, symbol: str | None = None) -> list[Order]:
         """Get all open orders."""
+        await self.ensure_time_sync()
         try:
             raw_orders = await self.exchange.fetch_open_orders(symbol)
             return [self._convert_order(o) for o in raw_orders]
