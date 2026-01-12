@@ -150,6 +150,7 @@ class APIClient:
             for strategy in data.get("strategies", []):
                 symbol = strategy.get("symbol", "UNKNOWN")
                 stats = strategy.get("statistics", {})
+                config = strategy.get("config", {})
 
                 # Fetch current price from OHLCV (1m candle for latest price)
                 current_price = await self._get_current_price(symbol)
@@ -163,6 +164,11 @@ class APIClient:
                         position_size=Decimal("0"),
                         order_count=stats.get("active_buy_orders", 0)
                         + stats.get("active_sell_orders", 0),
+                        # Grid config
+                        lower_price=Decimal(str(config.get("lower_price", "0"))),
+                        upper_price=Decimal(str(config.get("upper_price", "0"))),
+                        num_grids=int(config.get("num_grids", 0)),
+                        total_investment=Decimal(str(config.get("total_investment", "0"))),
                     )
                 )
 

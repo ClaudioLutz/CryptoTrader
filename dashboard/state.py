@@ -480,6 +480,7 @@ class DashboardState:
         Called less frequently (every 5 seconds) for non-critical data.
         Behavior:
         - Always fetch pairs/strategies data (WebSocket doesn't provide this)
+        - Fetch orders for each pair to ensure accurate order counts
         - Skip price updates if WebSocket connected (ticker stream provides real-time prices)
         """
         # Always need to fetch pairs data - WebSocket only provides price updates
@@ -487,6 +488,13 @@ class DashboardState:
             try:
                 # Fetch pairs data from /api/strategies
                 self.pairs = await self._api_client.get_pairs()
+
+                # Fetch orders for each pair to ensure accurate header count
+                # (strategy stats may not include manually placed orders)
+                for pair in self.pairs:
+                    symbol = pair.symbol
+                    orders = await self._api_client.get_orders(symbol)
+                    self.orders_by_symbol[symbol] = orders
 
                 # Update last_update timestamp
                 if self.pairs:

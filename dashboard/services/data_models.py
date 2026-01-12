@@ -43,6 +43,10 @@ class PairData(BaseModel):
         pnl_percent: Profit/loss percentage for today.
         position_size: Current position size in base currency.
         order_count: Number of open orders for this pair.
+        lower_price: Grid lower price bound.
+        upper_price: Grid upper price bound.
+        num_grids: Number of grid levels.
+        total_investment: Total investment amount.
     """
 
     symbol: str = Field(
@@ -68,6 +72,23 @@ class PairData(BaseModel):
         ge=0,
         default=0,
         description="Number of open orders",
+    )
+    # Grid strategy config
+    lower_price: Decimal = Field(
+        default=Decimal("0"),
+        description="Grid lower price bound",
+    )
+    upper_price: Decimal = Field(
+        default=Decimal("0"),
+        description="Grid upper price bound",
+    )
+    num_grids: int = Field(
+        default=0,
+        description="Number of grid levels",
+    )
+    total_investment: Decimal = Field(
+        default=Decimal("0"),
+        description="Total investment amount",
     )
 
 

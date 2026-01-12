@@ -42,6 +42,7 @@ if exist %LOG_FILE% (
 
 REM Step 4: Start the bot (APPEND to logs with >>)
 echo [4/5] Starting bot on port %BOT_PORT%...
+set PYTHONPATH=%CD%\src
 start /B python -m crypto_bot.main --api-port %BOT_PORT% >> %LOG_FILE% 2>&1
 
 REM Wait a moment

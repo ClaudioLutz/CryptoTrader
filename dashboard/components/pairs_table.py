@@ -317,8 +317,9 @@ def _create_mini_figure(
 
 
 def _create_order_details(symbol: str) -> None:
-    """Create order details panel."""
-    ui.label("ORDERS").classes("section-label")
+    """Create order details panel with strategy info - compact horizontal layout."""
+    pair = next((p for p in state.pairs if p.symbol == symbol), None)
+    current_price = pair.current_price if pair else Decimal("0")
 
     # Use per-symbol orders cache
     symbol_orders = state.orders_by_symbol.get(symbol, [])
@@ -328,26 +329,48 @@ def _create_order_details(symbol: str) -> None:
     buy_count = len(buy_orders)
     sell_count = len(sell_orders)
 
-    lowest_buy = min((o.price for o in buy_orders), default=Decimal("0"))
-    highest_sell = max((o.price for o in sell_orders), default=Decimal("0"))
+    highest_buy = max((o.price for o in buy_orders), default=Decimal("0"))
+    lowest_sell = min((o.price for o in sell_orders), default=Decimal("0"))
 
-    with ui.row().classes("order-summary gap-6"):
-        with ui.column().classes("order-group"):
-            ui.label("BUY").classes("order-label text-xs")
-            ui.label(str(buy_count)).classes("order-count buy-count")
-            if lowest_buy > 0:
-                ui.label(f"from ${lowest_buy:,.2f}").classes("price-range-text")
+    # Compact horizontal layout
+    with ui.row().classes("items-start gap-8 w-full"):
+        # Orders column
+        with ui.column().classes("gap-1"):
+            ui.label("ORDERS").classes("section-label text-xs")
+            with ui.row().classes("gap-4"):
+                with ui.column().classes("items-center"):
+                    ui.label(str(buy_count)).classes("text-2xl font-bold text-green-400")
+                    ui.label("BUY").classes("text-xs text-gray-500")
+                with ui.column().classes("items-center"):
+                    ui.label(str(sell_count)).classes("text-2xl font-bold text-red-400")
+                    ui.label("SELL").classes("text-xs text-gray-500")
 
-        with ui.column().classes("order-group"):
-            ui.label("SELL").classes("order-label text-xs")
-            ui.label(str(sell_count)).classes("order-count sell-count")
-            if highest_sell > 0:
-                ui.label(f"up to ${highest_sell:,.2f}").classes("price-range-text")
+        # Distances column
+        if current_price > 0 and (highest_buy > 0 or lowest_sell > 0):
+            with ui.column().classes("gap-1"):
+                ui.label("DISTANCES").classes("section-label text-xs")
+                if highest_buy > 0:
+                    dist_buy_pct = ((current_price - highest_buy) / current_price) * 100
+                    ui.label(f"Next BUY: ${highest_buy:,.2f} ({dist_buy_pct:+.1f}%)").classes("text-xs text-green-400")
+                if lowest_sell > 0:
+                    dist_tp_pct = ((lowest_sell - current_price) / current_price) * 100
+                    ui.label(f"TP: ${lowest_sell:,.2f} ({dist_tp_pct:+.1f}%)").classes("text-xs text-green-400")
+
+        # Grid strategy column
+        if pair and pair.lower_price > 0:
+            with ui.column().classes("gap-1"):
+                ui.label("GRID").classes("section-label text-xs")
+                ui.label(f"${pair.lower_price:,.0f} - ${pair.upper_price:,.0f}").classes("text-xs text-gray-400")
+                ui.label(f"{pair.num_grids} levels | ${pair.total_investment:,.0f}").classes("text-xs text-gray-400")
 
 
 def _create_recent_trades(symbol: str) -> None:
     """Create scrollable recent trades list."""
     ui.label("RECENT TRADES").classes("section-label")
+
+    # Get current price for P&L calculation
+    pair = next((p for p in state.pairs if p.symbol == symbol), None)
+    current_price = pair.current_price if pair else Decimal("0")
 
     # Use per-symbol trades cache - show all trades (scrollable)
     symbol_trades = state.trades_by_symbol.get(symbol, [])
@@ -360,19 +383,34 @@ def _create_recent_trades(symbol: str) -> None:
     with ui.element("div").classes("trades-scroll-container"):
         with ui.column().classes("trades-list gap-1"):
             for trade in symbol_trades:
-                _create_trade_row(trade)
+                _create_trade_row(trade, current_price)
 
 
-def _create_trade_row(trade: TradeData) -> None:
-    """Create a single trade row."""
+def _create_trade_row(trade: TradeData, current_price: Decimal = Decimal("0")) -> None:
+    """Create a single trade row with P&L."""
     side_class = "trade-buy" if trade.side.lower() == "buy" else "trade-sell"
     side_icon = "arrow_upward" if trade.side.lower() == "buy" else "arrow_downward"
+
+    # Calculate unrealized P&L for buy trades
+    pnl_text = ""
+    pnl_class = ""
+    if trade.side.lower() == "buy" and current_price > 0:
+        pnl = (current_price - trade.price) * trade.amount
+        pnl_pct = ((current_price - trade.price) / trade.price) * 100
+        if pnl >= 0:
+            pnl_text = f"+${pnl:.2f} ({pnl_pct:+.1f}%)"
+            pnl_class = "text-green-400"
+        else:
+            pnl_text = f"-${abs(pnl):.2f} ({pnl_pct:+.1f}%)"
+            pnl_class = "text-red-400"
 
     with ui.row().classes(f"trade-row {side_class} items-center gap-2"):
         ui.icon(side_icon).classes("trade-icon")
         ui.label(trade.side.upper()).classes("trade-side")
         ui.label(f"${trade.price:,.2f}").classes("trade-price")
         ui.label(f"{trade.amount}").classes("trade-amount")
+        if pnl_text:
+            ui.label(pnl_text).classes(f"trade-pnl text-xs {pnl_class}")
         ui.label(trade.timestamp.strftime("%H:%M")).classes("trade-time")
 
 

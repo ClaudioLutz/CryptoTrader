@@ -108,6 +108,9 @@ def _get_filtered_rows() -> list[dict]:
     """Get trade history rows with current filters applied."""
     rows = []
 
+    # Build a map of current prices by symbol
+    current_prices = {p.symbol: p.current_price for p in state.pairs}
+
     for trade in state.trades:
         # Apply symbol filter
         if state.history_filter_symbol and trade.symbol != state.history_filter_symbol:
@@ -128,17 +131,31 @@ def _get_filtered_rows() -> list[dict]:
         pnl_class = ""
         pnl_text = "-"
 
-        # Estimate P&L if not provided
-        if hasattr(trade, "pnl") and trade.pnl is not None:
+        # Calculate unrealized P&L for buy trades based on current price
+        if trade.side.lower() == "buy":
+            current_price = current_prices.get(trade.symbol)
+            if current_price and current_price > 0:
+                from decimal import Decimal
+                pnl_value = (current_price - trade.price) * trade.amount
+                if pnl_value > 0:
+                    pnl_class = "pnl-positive"
+                    pnl_text = f"+${float(pnl_value):.2f}"
+                elif pnl_value < 0:
+                    pnl_class = "pnl-negative"
+                    pnl_text = f"-${abs(float(pnl_value)):.2f}"
+                else:
+                    pnl_text = "$0.00"
+        # For sell trades, show P&L if available
+        elif hasattr(trade, "pnl") and trade.pnl is not None:
             pnl_value = trade.pnl
             if pnl_value > 0:
                 pnl_class = "pnl-positive"
-                pnl_text = f"+\u20ac{pnl_value:.2f}"
+                pnl_text = f"+${float(pnl_value):.2f}"
             elif pnl_value < 0:
                 pnl_class = "pnl-negative"
-                pnl_text = f"-\u20ac{abs(pnl_value):.2f}"
+                pnl_text = f"-${abs(float(pnl_value)):.2f}"
             else:
-                pnl_text = "\u20ac0.00"
+                pnl_text = "$0.00"
 
         rows.append({
             "time": trade.timestamp.strftime("%Y-%m-%d %H:%M:%S"),

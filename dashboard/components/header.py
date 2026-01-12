@@ -184,12 +184,19 @@ def _create_order_count_content() -> None:
     """Create order count display (Story 3.5).
 
     Shows total open orders across all pairs.
+    Prefers actual orders from exchange over strategy stats for accuracy.
     """
-    # Sum order_count from all pairs if available, otherwise use orders list
-    if state.pairs:
+    # Prefer actual orders from orders_by_symbol (fetched from exchange)
+    # over strategy stats which may not include manually placed orders
+    total_from_orders = sum(len(orders) for orders in state.orders_by_symbol.values())
+    if total_from_orders > 0:
+        order_count = total_from_orders
+    elif state.orders:
+        order_count = len(state.orders)
+    elif state.pairs:
         order_count = sum(p.order_count for p in state.pairs)
     else:
-        order_count = len(state.orders)
+        order_count = 0
 
     ui.label(f"{order_count} ord").classes("order-count")
 
