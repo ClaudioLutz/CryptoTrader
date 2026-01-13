@@ -202,7 +202,15 @@ def _create_mini_chart(symbol: str) -> None:
     ohlcv_data = state.ohlcv_by_symbol.get(symbol, [])
     symbol_trades = state.trades_by_symbol.get(symbol, [])
 
-    fig = _create_mini_figure(symbol, ohlcv_data, symbol_trades)
+    # Get grid config for this pair
+    pair = next((p for p in state.pairs if p.symbol == symbol), None)
+    grid_levels = None
+    if pair and pair.lower_price > 0 and pair.upper_price > 0 and pair.num_grids >= 2:
+        grid_levels = _calculate_grid_levels(
+            pair.lower_price, pair.upper_price, pair.num_grids
+        )
+
+    fig = _create_mini_figure(symbol, ohlcv_data, symbol_trades, grid_levels)
 
     chart = ui.plotly(fig).classes("mini-price-chart")
     chart._props["config"] = {
@@ -214,10 +222,20 @@ def _create_mini_chart(symbol: str) -> None:
     }
 
 
+def _calculate_grid_levels(lower: Decimal, upper: Decimal, num_grids: int) -> list[float]:
+    """Calculate geometric grid price levels."""
+    if num_grids < 2 or lower <= 0 or upper <= lower:
+        return []
+
+    ratio = (float(upper) / float(lower)) ** (1 / (num_grids - 1))
+    return [float(lower) * (ratio ** i) for i in range(num_grids)]
+
+
 def _create_mini_figure(
     symbol: str,
     ohlcv_data: list[dict[str, Any]],
     trades: list[TradeData],
+    grid_levels: list[float] | None = None,
 ) -> go.Figure:
     """Create a mini Plotly figure for the pair card."""
     fig = go.Figure()
@@ -240,11 +258,13 @@ def _create_mini_figure(
             hovertemplate="$%{y:,.2f}<extra></extra>",
         ))
 
-    # Calculate y-axis range
+    # Calculate y-axis range (include grid levels if available)
     all_prices = list(closes) if closes else []
     if trades:
         trade_prices = [float(t.price) for t in trades]
         all_prices.extend(trade_prices)
+    if grid_levels:
+        all_prices.extend(grid_levels)
 
     if all_prices:
         min_price = min(all_prices)
@@ -280,6 +300,21 @@ def _create_mini_figure(
                 marker=dict(symbol="triangle-down", size=8, color="#ff5252"),
                 hovertemplate="SELL $%{y:,.2f}<extra></extra>",
             ))
+
+    # Add horizontal grid lines for grid levels
+    if grid_levels and timestamps:
+        for i, level_price in enumerate(grid_levels):
+            # Determine line style: dashed for buy levels (below price), solid for sell targets
+            fig.add_hline(
+                y=level_price,
+                line_dash="dot",
+                line_color="rgba(255, 193, 7, 0.4)",  # Amber/yellow
+                line_width=1,
+                annotation_text=f"${level_price:,.0f}",
+                annotation_position="left",
+                annotation_font_size=8,
+                annotation_font_color="rgba(255, 193, 7, 0.6)",
+            )
 
     fig.update_layout(
         template="plotly_dark",
