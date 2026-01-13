@@ -464,8 +464,11 @@ body {
 .mini-chart-section {
   flex: 2;
   min-width: 400px;
+  max-width: calc(100% - 550px);  /* Leave room for orders and trades columns */
   display: flex;
   flex-direction: column;
+  position: relative;
+  overflow: hidden;
 }
 
 .mini-price-chart {
@@ -516,6 +519,9 @@ body {
   flex: 1;
   min-width: 280px;
   max-width: 450px;
+  position: relative;
+  z-index: 10;
+  background-color: var(--bg-primary);  /* Solid background to cover any chart overflow */
 }
 
 .trades-list {
