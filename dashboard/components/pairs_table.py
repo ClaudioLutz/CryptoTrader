@@ -20,6 +20,8 @@ from dashboard.services.data_models import OrderData, TradeData
 # Available chart timeframes
 TIMEFRAMES = ["1h", "4h", "1d", "1w"]
 TIMEFRAME_LABELS = {"1h": "1H", "4h": "4H", "1d": "1D", "1w": "1W"}
+# Candle limits per timeframe (aim for ~7 days of data)
+TIMEFRAME_LIMITS = {"1h": 168, "4h": 42, "1d": 30, "1w": 12}
 
 
 def format_price(price: Decimal, symbol: str) -> str:
@@ -105,7 +107,8 @@ def _create_pair_row(symbol: str) -> None:
 
                 # Get current timeframe or default to 1h
                 timeframe = state.chart_timeframe_by_symbol.get(sym, "1h")
-                await state.refresh_ohlcv(sym, timeframe=timeframe, limit=48)
+                limit = TIMEFRAME_LIMITS.get(timeframe, 48)
+                await state.refresh_ohlcv(sym, timeframe=timeframe, limit=limit)
                 state.expanded_rows.add(sym)
 
                 # Rebuild the expansion content with new data
@@ -118,7 +121,8 @@ def _create_pair_row(symbol: str) -> None:
         async def change_timeframe(timeframe: str, sym=symbol, cont=container) -> None:
             """Change chart timeframe and refresh data."""
             state.chart_timeframe_by_symbol[sym] = timeframe
-            await state.refresh_ohlcv(sym, timeframe=timeframe, limit=48)
+            limit = TIMEFRAME_LIMITS.get(timeframe, 48)
+            await state.refresh_ohlcv(sym, timeframe=timeframe, limit=limit)
 
             # Rebuild the expansion content
             cont.clear()
@@ -164,7 +168,8 @@ def _create_chart_with_controls(symbol: str) -> None:
     ) -> None:
         """Change timeframe, fetch new data, and rebuild chart."""
         state.chart_timeframe_by_symbol[sym] = timeframe
-        await state.refresh_ohlcv(sym, timeframe=timeframe, limit=48)
+        limit = TIMEFRAME_LIMITS.get(timeframe, 48)
+        await state.refresh_ohlcv(sym, timeframe=timeframe, limit=limit)
         rebuild_fn()
         # Update button styles
         if buttons_cont:
@@ -304,16 +309,16 @@ def _create_mini_figure(
     # Add horizontal grid lines for grid levels
     if grid_levels and timestamps:
         for i, level_price in enumerate(grid_levels):
-            # Determine line style: dashed for buy levels (below price), solid for sell targets
             fig.add_hline(
                 y=level_price,
                 line_dash="dot",
                 line_color="rgba(255, 193, 7, 0.4)",  # Amber/yellow
                 line_width=1,
                 annotation_text=f"${level_price:,.0f}",
-                annotation_position="left",
+                annotation_position="right",
                 annotation_font_size=8,
-                annotation_font_color="rgba(255, 193, 7, 0.6)",
+                annotation_font_color="rgba(255, 193, 7, 0.7)",
+                annotation_bgcolor="rgba(0,0,0,0.5)",
             )
 
     fig.update_layout(
@@ -321,7 +326,7 @@ def _create_mini_figure(
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         height=180,
-        margin=dict(l=50, r=10, t=5, b=25),
+        margin=dict(l=50, r=45, t=5, b=25),
         showlegend=False,
         xaxis=dict(
             showgrid=False,
