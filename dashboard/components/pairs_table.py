@@ -219,11 +219,12 @@ def _create_mini_chart(symbol: str) -> None:
 
     chart = ui.plotly(fig).classes("mini-price-chart")
     chart._props["config"] = {
-        "scrollZoom": False,
-        "displayModeBar": False,
+        "scrollZoom": True,  # Enable scroll to zoom
+        "displayModeBar": "hover",  # Show toolbar on hover
         "displaylogo": False,
         "responsive": True,
         "staticPlot": False,
+        "modeBarButtonsToRemove": ["lasso2d", "select2d"],  # Remove selection tools
     }
 
 
@@ -263,13 +264,11 @@ def _create_mini_figure(
             hovertemplate="$%{y:,.2f}<extra></extra>",
         ))
 
-    # Calculate y-axis range (include grid levels if available)
+    # Calculate y-axis range (based on price data only, grid lines show if in view)
     all_prices = list(closes) if closes else []
     if trades:
         trade_prices = [float(t.price) for t in trades]
         all_prices.extend(trade_prices)
-    if grid_levels:
-        all_prices.extend(grid_levels)
 
     if all_prices:
         min_price = min(all_prices)
@@ -332,13 +331,13 @@ def _create_mini_figure(
             showgrid=False,
             showticklabels=True,
             tickfont=dict(color="#6b7280", size=9),
-            fixedrange=True,
+            fixedrange=False,  # Enable horizontal zoom/pan
         ),
         yaxis=dict(
             showgrid=True,
             gridcolor="rgba(15, 52, 96, 0.5)",
             tickfont=dict(color="#6b7280", size=9),
-            fixedrange=True,
+            fixedrange=False,  # Enable vertical zoom/pan
             range=[y_min, y_max] if y_min is not None else None,
         ),
         hovermode="x unified",
