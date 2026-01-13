@@ -305,19 +305,14 @@ def _create_mini_figure(
                 hovertemplate="SELL $%{y:,.2f}<extra></extra>",
             ))
 
-    # Add horizontal grid lines for grid levels
+    # Add horizontal grid lines for grid levels (no annotations to avoid overlap)
     if grid_levels and timestamps:
-        for i, level_price in enumerate(grid_levels):
+        for level_price in grid_levels:
             fig.add_hline(
                 y=level_price,
                 line_dash="dot",
-                line_color="rgba(255, 193, 7, 0.4)",  # Amber/yellow
+                line_color="rgba(255, 193, 7, 0.5)",  # Amber/yellow
                 line_width=1,
-                annotation_text=f"${level_price:,.0f}",
-                annotation_position="right",
-                annotation_font_size=8,
-                annotation_font_color="rgba(255, 193, 7, 0.7)",
-                annotation_bgcolor="rgba(0,0,0,0.5)",
             )
 
     fig.update_layout(
@@ -325,7 +320,7 @@ def _create_mini_figure(
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         height=180,
-        margin=dict(l=50, r=45, t=5, b=25),
+        margin=dict(l=50, r=10, t=5, b=25),
         showlegend=False,
         xaxis=dict(
             showgrid=False,
