@@ -155,6 +155,105 @@ The dashboard provides:
 - Active orders and trade history
 - Configuration management
 
+## Docker Deployment
+
+Run CryptoTrader in Docker for isolated, reproducible deployments.
+
+### Quick Start with Docker
+
+```bash
+# Copy environment file
+cp .env.example .env
+# Edit .env with your API keys
+
+# Run bot + dashboard (combined)
+docker compose --profile combined up -d cryptotrader
+
+# Or run as separate services
+docker compose up -d bot dashboard
+
+# Check status
+docker compose ps
+
+# View logs
+docker compose logs -f
+
+# Stop
+docker compose down
+```
+
+### Docker Services
+
+| Service | Port | Description |
+|---------|------|-------------|
+| `bot` | 8080 | Trading bot with health API |
+| `dashboard` | 8081 | NiceGUI web dashboard |
+| `cryptotrader` | 8080, 8081 | Combined (both services) |
+
+### Build Locally
+
+```bash
+docker build -t cryptotrader:latest .
+docker run -d --env-file .env -p 8080:8080 -p 8081:8081 cryptotrader:latest
+```
+
+## Cloud Deployment (GCP)
+
+Deploy CryptoTrader to Google Cloud Platform for 24/7 operation.
+
+### Prerequisites
+
+- Google Cloud account with billing enabled
+- `gcloud` CLI installed and authenticated
+- Binance API credentials
+
+### Quick Deploy
+
+```bash
+# Set your project ID
+export GCP_PROJECT_ID="your-project-id"
+
+# Run full setup
+./deploy/gcp/deploy.sh setup    # Enable APIs
+./deploy/gcp/deploy.sh secrets  # Add API keys to Secret Manager
+./deploy/gcp/deploy.sh build    # Build Docker image
+./deploy/gcp/deploy.sh deploy-vm # Deploy to Compute Engine
+```
+
+### Deployment Options
+
+| Option | Best For | Cost |
+|--------|----------|------|
+| **Compute Engine** | 24/7 trading (recommended) | ~$13-15/month |
+| **Cloud Run** | Event-driven, sporadic use | Pay-per-request |
+
+### Region Selection
+
+> **Important:** Binance blocks US-based IP addresses. Deploy in EU or Asia regions:
+> - `europe-west4` (Netherlands) - Recommended
+> - `europe-west6` (Switzerland)
+> - `asia-east1` (Taiwan)
+
+### Useful Commands
+
+```bash
+# Check VM status
+gcloud compute instances list
+
+# SSH into VM
+gcloud compute ssh cryptotrader-vm --zone=europe-west4-a
+
+# View container logs
+gcloud compute ssh cryptotrader-vm --zone=europe-west4-a \
+  --command="docker logs \$(docker ps -q) --tail 100"
+
+# Stop/Start VM
+gcloud compute instances stop cryptotrader-vm --zone=europe-west4-a
+gcloud compute instances start cryptotrader-vm --zone=europe-west4-a
+```
+
+For detailed instructions, see [deploy/gcp/README.md](deploy/gcp/README.md).
+
 ## Live Trading
 
 To run with real trades, omit the `--dry-run` flag and set `TRADING__DRY_RUN=false` in your `.env`:

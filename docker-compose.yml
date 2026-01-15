@@ -1,0 +1,139 @@
+# =============================================================================
+# CryptoTrader 3.0 - Docker Compose Configuration
+# Use for local development and testing before GCP deployment
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # Trading Bot Service
+  # ---------------------------------------------------------------------------
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: cryptotrader-bot
+    command: ["bot"]
+    restart: unless-stopped
+    ports:
+      - "8080:8080"  # Health check API
+    environment:
+      # Exchange (loaded from .env or set here)
+      - EXCHANGE__NAME=${EXCHANGE__NAME:-binance}
+      - EXCHANGE__API_KEY=${EXCHANGE__API_KEY}
+      - EXCHANGE__API_SECRET=${EXCHANGE__API_SECRET}
+      - EXCHANGE__TESTNET=${EXCHANGE__TESTNET:-true}
+      - EXCHANGE__RATE_LIMIT_MS=${EXCHANGE__RATE_LIMIT_MS:-100}
+      # Database
+      - DB__URL=sqlite+aiosqlite:///./data/trading.db
+      - DB__ECHO=false
+      # Trading
+      - TRADING__SYMBOL=${TRADING__SYMBOL:-BTC/USDT}
+      - TRADING__DRY_RUN=${TRADING__DRY_RUN:-true}
+      # Risk
+      - RISK__MAX_POSITION_PCT=${RISK__MAX_POSITION_PCT:-0.20}
+      - RISK__MAX_DAILY_LOSS_PCT=${RISK__MAX_DAILY_LOSS_PCT:-0.05}
+      # Health server
+      - HEALTH__HOST=0.0.0.0
+      - HEALTH__PORT=8080
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_JSON=true
+    volumes:
+      - bot-data:/app/data
+      - bot-logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - cryptotrader-network
+
+  # ---------------------------------------------------------------------------
+  # Dashboard Service
+  # ---------------------------------------------------------------------------
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: cryptotrader-dashboard
+    command: ["dashboard"]
+    restart: unless-stopped
+    ports:
+      - "8081:8081"  # Dashboard web UI
+    environment:
+      - DASHBOARD_PORT=8081
+      - DASHBOARD_API_BASE_URL=http://bot:8080
+      - DASHBOARD_POLL_INTERVAL_TIER1=${DASHBOARD_POLL_INTERVAL_TIER1:-2.0}
+      - DASHBOARD_POLL_INTERVAL_TIER2=${DASHBOARD_POLL_INTERVAL_TIER2:-5.0}
+      - DASHBOARD_AUTH_ENABLED=${DASHBOARD_AUTH_ENABLED:-false}
+      - DASHBOARD_AUTH_PASSWORD=${DASHBOARD_AUTH_PASSWORD:-}
+      # Binance WebSocket (for real-time prices)
+      - EXCHANGE__API_KEY=${EXCHANGE__API_KEY}
+      - EXCHANGE__API_SECRET=${EXCHANGE__API_SECRET}
+      - EXCHANGE__TESTNET=${EXCHANGE__TESTNET:-true}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - dashboard-logs:/app/logs
+    depends_on:
+      bot:
+        condition: service_healthy
+    networks:
+      - cryptotrader-network
+
+  # ---------------------------------------------------------------------------
+  # Combined Service (Bot + Dashboard in single container)
+  # Use this for simpler deployments or Cloud Run
+  # ---------------------------------------------------------------------------
+  cryptotrader:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: cryptotrader-all
+    command: ["all"]
+    restart: unless-stopped
+    ports:
+      - "8080:8080"  # Bot API
+      - "8081:8081"  # Dashboard
+    env_file:
+      - .env
+    environment:
+      - DB__URL=sqlite+aiosqlite:///./data/trading.db
+      - HEALTH__HOST=0.0.0.0
+      - HEALTH__PORT=8080
+      - DASHBOARD_PORT=8081
+      - DASHBOARD_API_BASE_URL=http://localhost:8080
+    volumes:
+      - cryptotrader-data:/app/data
+      - cryptotrader-logs:/app/logs
+    profiles:
+      - combined  # Only start with: docker compose --profile combined up cryptotrader
+    networks:
+      - cryptotrader-network
+
+# =============================================================================
+# Volumes for persistent data
+# =============================================================================
+volumes:
+  bot-data:
+    name: cryptotrader-bot-data
+  bot-logs:
+    name: cryptotrader-bot-logs
+  dashboard-logs:
+    name: cryptotrader-dashboard-logs
+  cryptotrader-data:
+    name: cryptotrader-data
+  cryptotrader-logs:
+    name: cryptotrader-logs
+
+# =============================================================================
+# Network configuration
+# =============================================================================
+networks:
+  cryptotrader-network:
+    name: cryptotrader-network
+    driver: bridge
