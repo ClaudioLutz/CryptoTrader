@@ -1,0 +1,14 @@
+# Domain registration contact data
+# WHOIS privacy will be enabled - this info is not publicly visible
+
+allContacts:
+  email: billwilson.rip2012@gmail.com
+  phoneNumber: "+41.764356188"
+  postalAddress:
+    regionCode: CH
+    postalCode: "8000"
+    locality: Zurich
+    addressLines:
+      - "Bahnhofstrasse 1"
+    recipients:
+      - "Domain Admin"

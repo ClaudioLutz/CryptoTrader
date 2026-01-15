@@ -965,3 +965,423 @@ body {
   min-width: 36px !important;
   height: 24px !important;
 }
+
+/* ============================================
+   Mobile Responsive Styles
+   ============================================ */
+
+/* Tablet breakpoint (600-900px) */
+@media screen and (max-width: 900px) {
+  /* Header adjustments */
+  .header-content {
+    gap: 16px;
+  }
+
+  .pnl-breakdown {
+    gap: 0.75rem;
+  }
+
+  /* Expansion content: Chart on top, Orders/Trades side by side below */
+  .expansion-grid-3col {
+    flex-wrap: wrap;
+  }
+
+  .mini-chart-section {
+    flex: 1 1 100%;
+    min-width: 100%;
+    max-width: 100%;
+    order: 1;
+    margin-bottom: 16px;
+  }
+
+  .order-details-section {
+    flex: 1 1 40%;
+    min-width: 140px;
+    max-width: 200px;
+    order: 2;
+  }
+
+  .trades-section {
+    flex: 1 1 50%;
+    min-width: 200px;
+    max-width: none;
+    order: 3;
+  }
+}
+
+/* Mobile breakpoint (< 600px) */
+@media screen and (max-width: 600px) {
+  /* ===== HEADER: Simplified layout ===== */
+  .fixed-header {
+    height: auto;
+    min-height: auto;
+    max-height: none;
+    padding: 8px 12px;
+  }
+
+  .header-content {
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: space-between !important;
+  }
+
+  /* Status - left side */
+  .header-slot.status-slot {
+    order: 1;
+  }
+
+  /* P&L - center, show only total */
+  .header-slot.pnl-slot {
+    order: 2;
+    flex: 1;
+    justify-content: center;
+  }
+
+  .pnl-breakdown {
+    gap: 0.5rem;
+  }
+
+  .pnl-breakdown .pnl-item:not(:last-child) {
+    display: none;
+  }
+
+  .pnl-value.total {
+    font-size: 1.1rem;
+  }
+
+  /* Hide pairs and orders count on mobile (visible in pair rows) */
+  .header-slot.pairs-slot,
+  .header-slot.orders-slot {
+    display: none;
+  }
+
+  /* Timestamp - right side */
+  .header-slot.timestamp-slot {
+    order: 3;
+  }
+
+  .timestamp-display,
+  .timestamp-stale {
+    font-size: 12px;
+  }
+
+  /* Status indicator - compact */
+  .status-indicator {
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+
+  .status-text {
+    font-size: 11px;
+  }
+
+  /* ===== TABS: Icons only on mobile ===== */
+  .dashboard-tabs .q-tab {
+    min-width: 60px;
+    padding: 8px 12px;
+  }
+
+  .dashboard-tabs .q-tab__label {
+    display: none;
+  }
+
+  /* ===== TIMEFRAME ROW: Compact ===== */
+  .timeframe-row {
+    height: auto;
+    padding: 6px 12px;
+    overflow-x: auto;
+  }
+
+  .timeframe-cell {
+    min-width: 70px;
+    flex-shrink: 0;
+  }
+
+  .timeframe-pct {
+    font-size: 12px;
+  }
+
+  .timeframe-abs {
+    font-size: 9px;
+  }
+
+  /* ===== PAIRS TABLE: Compact rows ===== */
+  .pairs-table-container,
+  .centered-container {
+    padding: 0 8px;
+    max-width: 100%;
+  }
+
+  /* Pair row header - show: symbol, price, order count */
+  .pair-row-header {
+    grid-template-columns: 20px 1fr auto auto;
+    gap: 8px;
+  }
+
+  .pair-symbol {
+    font-size: 13px;
+  }
+
+  .pair-price {
+    font-size: 12px;
+  }
+
+  /* Hide P&L and position on mobile (shown in expansion) */
+  .pair-row-header .pair-pnl,
+  .pair-row-header .pair-position {
+    display: none;
+  }
+
+  .pair-orders {
+    font-size: 11px;
+    min-width: 24px;
+  }
+
+  .expand-icon {
+    font-size: 18px;
+  }
+
+  /* ===== EXPANSION CONTENT: Stacked layout ===== */
+  .expansion-content {
+    padding: 12px 8px;
+  }
+
+  .expansion-grid-3col {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /* Chart section - full width, on top */
+  .mini-chart-section {
+    order: 1;
+    flex: 1 1 100%;
+    min-width: 100%;
+    max-width: 100%;
+  }
+
+  .mini-price-chart {
+    height: 160px;
+  }
+
+  /* Chart controls */
+  .chart-controls {
+    justify-content: center;
+    margin-bottom: 8px;
+  }
+
+  .timeframe-btn,
+  .timeframe-active {
+    font-size: 11px !important;
+    min-width: 38px !important;
+    height: 28px !important;
+    padding: 4px 8px !important;
+  }
+
+  /* Orders and Trades - side by side below chart */
+  .order-details-section {
+    order: 2;
+    flex: 1 1 45%;
+    min-width: 45%;
+    max-width: 50%;
+    float: left;
+  }
+
+  .trades-section {
+    order: 3;
+    flex: 1 1 50%;
+    min-width: 50%;
+    max-width: 55%;
+    float: right;
+  }
+
+  /* Orders section - more compact */
+  .order-details-section .gap-8 {
+    gap: 8px !important;
+    flex-direction: column;
+  }
+
+  .order-details-section .section-label {
+    font-size: 10px;
+  }
+
+  .order-details-section .text-2xl {
+    font-size: 1.25rem;
+  }
+
+  .order-details-section .text-xs {
+    font-size: 10px;
+  }
+
+  /* Trades section - compact */
+  .trades-section .section-label {
+    font-size: 10px;
+  }
+
+  .trades-scroll-container {
+    max-height: 140px;
+  }
+
+  .trade-row {
+    padding: 3px 6px;
+    font-size: 10px;
+  }
+
+  .trade-icon {
+    font-size: 10px;
+  }
+
+  .trade-side {
+    font-size: 9px;
+    width: 28px;
+  }
+
+  .trade-price {
+    min-width: 55px;
+    font-size: 10px;
+  }
+
+  .trade-amount {
+    min-width: 35px;
+    font-size: 10px;
+  }
+
+  .trade-pnl {
+    font-size: 9px !important;
+  }
+
+  .trade-time {
+    font-size: 9px;
+  }
+
+  /* ===== CONFIG VIEW: Full width ===== */
+  .config-view {
+    padding: 8px;
+    max-width: 100%;
+  }
+
+  .config-section {
+    padding: 12px;
+  }
+
+  /* ===== HISTORY TABLE: Scrollable ===== */
+  .history-filters {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .filter-select {
+    min-width: 100px;
+    flex: 1;
+  }
+
+  .date-input {
+    width: 100%;
+  }
+
+  .history-table-container {
+    padding: 8px;
+    overflow-x: auto;
+  }
+
+  .history-table td,
+  .history-table th {
+    font-size: 11px;
+    padding: 6px 8px;
+    white-space: nowrap;
+  }
+
+  /* ===== LOGIN: Mobile friendly ===== */
+  .login-card {
+    margin: 24px 12px;
+    padding: 20px;
+  }
+
+  .login-title {
+    font-size: 20px;
+  }
+}
+
+/* Small phone (< 400px) */
+@media screen and (max-width: 400px) {
+  /* Even more compact header */
+  .fixed-header {
+    padding: 6px 8px;
+  }
+
+  .status-indicator {
+    padding: 3px 6px;
+  }
+
+  .status-text {
+    font-size: 10px;
+  }
+
+  /* Smaller chart */
+  .mini-price-chart {
+    height: 140px;
+  }
+
+  /* Stack orders and trades vertically on very small screens */
+  .order-details-section,
+  .trades-section {
+    flex: 1 1 100%;
+    min-width: 100%;
+    max-width: 100%;
+    float: none;
+  }
+
+  .trades-scroll-container {
+    max-height: 120px;
+  }
+
+  /* Timeframe buttons smaller */
+  .timeframe-btn,
+  .timeframe-active {
+    font-size: 10px !important;
+    min-width: 32px !important;
+    height: 26px !important;
+  }
+}
+
+/* Touch device improvements */
+@media (pointer: coarse) {
+  /* Larger touch targets */
+  .timeframe-btn,
+  .timeframe-active {
+    min-height: 36px !important;
+    min-width: 40px !important;
+  }
+
+  .q-tab {
+    min-height: 48px;
+  }
+
+  .pair-expansion .q-item {
+    min-height: 48px;
+  }
+
+  /* Hide scrollbar on touch (still scrollable) */
+  .trades-scroll-container::-webkit-scrollbar {
+    width: 4px;
+  }
+}
+
+/* Landscape phone optimization */
+@media screen and (max-height: 500px) and (orientation: landscape) {
+  .fixed-header {
+    padding: 4px 12px;
+  }
+
+  .mini-price-chart {
+    height: 120px;
+  }
+
+  .trades-scroll-container {
+    max-height: 80px;
+  }
+
+  .timeframe-row {
+    padding: 4px 12px;
+  }
+}
