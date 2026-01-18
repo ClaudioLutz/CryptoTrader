@@ -459,11 +459,28 @@ async def main() -> int:
 
         # Start API server for dashboard
         if api_port:
-            health_server = HealthCheckServer(host="0.0.0.0", port=api_port)
+            # Parse CORS origins from comma-separated string
+            cors_origins = (
+                [o.strip() for o in settings.health.cors_origins.split(",") if o.strip()]
+                if settings.health.cors_origins
+                else []
+            )
+            health_server = HealthCheckServer(
+                host=settings.health.host,
+                port=api_port,
+                api_key=settings.health.api_key.get_secret_value(),
+                cors_origins=cors_origins,
+                rate_limit_requests=settings.health.rate_limit_requests,
+                rate_limit_window=settings.health.rate_limit_window,
+            )
             health_server.set_database(database)
             health_server.set_bot(bot_tracker)  # Pass tracker for status reporting
             await health_server.start()
-            logger.info("api_server_started", port=api_port)
+            logger.info(
+                "api_server_started",
+                port=api_port,
+                auth_enabled=bool(settings.health.api_key.get_secret_value()),
+            )
 
         # Run all bots concurrently
         tasks = []

@@ -50,6 +50,32 @@ class AlertSettings(BaseSettings):
     enabled: bool = True
 
 
+class HealthSettings(BaseSettings):
+    """Health check server and API security settings."""
+
+    model_config = SettingsConfigDict(env_prefix="HEALTH__")
+
+    host: str = "0.0.0.0"
+    port: int = Field(default=8080, ge=1024, le=65535)
+    api_key: SecretStr = Field(default=SecretStr(""))
+    cors_origins: str = Field(
+        default="",
+        description="Comma-separated list of allowed CORS origins",
+    )
+    rate_limit_requests: int = Field(
+        default=100,
+        ge=1,
+        le=10000,
+        description="Maximum requests per rate limit window",
+    )
+    rate_limit_window: int = Field(
+        default=60,
+        ge=1,
+        le=3600,
+        description="Rate limit window in seconds",
+    )
+
+
 class AppSettings(BaseSettings):
     """Root application settings with nested configurations."""
 
@@ -64,6 +90,7 @@ class AppSettings(BaseSettings):
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
     trading: TradingSettings = Field(default_factory=TradingSettings)
     alert: AlertSettings = Field(default_factory=AlertSettings)
+    health: HealthSettings = Field(default_factory=HealthSettings)
     log_level: str = "INFO"
     json_logs: bool = True
 

@@ -38,6 +38,10 @@ class DashboardConfig(BaseSettings):
         default="http://localhost:8080",
         description="Base URL for the trading bot REST API",
     )
+    api_key: SecretStr = Field(
+        default=SecretStr(""),
+        description="API key for authenticating with the bot API",
+    )
     api_timeout: float = Field(
         default=15.0,
         ge=1.0,

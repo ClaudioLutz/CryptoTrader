@@ -4,16 +4,56 @@ This module provides:
 - HealthCheckServer: HTTP server for health/readiness probes
 - Metrics endpoint for monitoring systems
 - Dashboard data API for trading performance visualization
+- Security middlewares: authentication, CORS, rate limiting, security headers
 """
 
+from collections import defaultdict
 from datetime import datetime, timedelta
 from decimal import Decimal
+from time import time
 from typing import Any, Optional
 
 from aiohttp import web
 import structlog
 
 logger = structlog.get_logger()
+
+
+class RateLimiter:
+    """Simple in-memory rate limiter using sliding window algorithm."""
+
+    def __init__(self, max_requests: int = 100, window_seconds: int = 60):
+        """Initialize rate limiter.
+
+        Args:
+            max_requests: Maximum requests allowed per window.
+            window_seconds: Time window in seconds.
+        """
+        self._max_requests = max_requests
+        self._window = window_seconds
+        self._requests: dict[str, list[float]] = defaultdict(list)
+
+    def is_allowed(self, client_ip: str) -> tuple[bool, int]:
+        """Check if request from client IP is allowed.
+
+        Args:
+            client_ip: Client IP address.
+
+        Returns:
+            Tuple of (is_allowed, remaining_requests).
+        """
+        now = time()
+        # Clean up old requests outside the window
+        self._requests[client_ip] = [
+            t for t in self._requests[client_ip] if now - t < self._window
+        ]
+
+        current_count = len(self._requests[client_ip])
+        if current_count >= self._max_requests:
+            return False, 0
+
+        self._requests[client_ip].append(now)
+        return True, self._max_requests - current_count - 1
 
 
 class HealthCheckServer:
@@ -41,16 +81,39 @@ class HealthCheckServer:
         self,
         host: str = "0.0.0.0",
         port: int = 8080,
+        api_key: str = "",
+        cors_origins: list[str] | None = None,
+        rate_limit_requests: int = 100,
+        rate_limit_window: int = 60,
     ):
         """Initialize health check server.
 
         Args:
             host: Host to bind to.
             port: Port to listen on.
+            api_key: API key required for authenticated endpoints.
+            cors_origins: List of allowed CORS origins.
+            rate_limit_requests: Max requests per rate limit window.
+            rate_limit_window: Rate limit window in seconds.
         """
         self._host = host
         self._port = port
-        self._app = web.Application()
+        self._api_key = api_key
+        self._cors_origins = cors_origins or []
+        self._rate_limiter = RateLimiter(rate_limit_requests, rate_limit_window)
+        self._rate_limit_window = rate_limit_window
+
+        # Create app with security middlewares
+        middlewares = [
+            self._security_headers_middleware,
+            self._cors_middleware,
+            self._rate_limit_middleware,
+        ]
+        # Only add auth middleware if API key is configured
+        if self._api_key:
+            middlewares.append(self._auth_middleware)
+
+        self._app = web.Application(middlewares=middlewares)
         self._runner: Optional[web.AppRunner] = None
         self._bot: Any = None
         self._database: Any = None
@@ -77,6 +140,108 @@ class HealthCheckServer:
         self._app.router.add_get("/api/status", self._status_handler)
         self._app.router.add_get("/api/strategies", self._strategies_handler)
         self._app.router.add_get("/api/ohlcv", self._ohlcv_handler)
+
+    # Security Middlewares
+    @web.middleware
+    async def _security_headers_middleware(
+        self, request: web.Request, handler: Any
+    ) -> web.Response:
+        """Add security headers to all responses."""
+        response = await handler(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Content-Security-Policy"] = "default-src 'none'"
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        return response
+
+    @web.middleware
+    async def _cors_middleware(
+        self, request: web.Request, handler: Any
+    ) -> web.Response:
+        """Handle CORS headers and preflight requests."""
+        origin = request.headers.get("Origin", "")
+
+        # Determine allowed origin
+        if self._cors_origins:
+            # Check if origin is in allowed list
+            allowed_origin = origin if origin in self._cors_origins else ""
+        else:
+            # No CORS origins configured - deny cross-origin requests
+            allowed_origin = ""
+
+        # Handle preflight OPTIONS request
+        if request.method == "OPTIONS":
+            return web.Response(
+                headers={
+                    "Access-Control-Allow-Origin": allowed_origin,
+                    "Access-Control-Allow-Methods": "GET, OPTIONS",
+                    "Access-Control-Allow-Headers": "X-API-Key, Authorization, Content-Type",
+                    "Access-Control-Max-Age": "86400",
+                }
+            )
+
+        response = await handler(request)
+
+        # Add CORS headers to response
+        if allowed_origin:
+            response.headers["Access-Control-Allow-Origin"] = allowed_origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+
+        return response
+
+    @web.middleware
+    async def _rate_limit_middleware(
+        self, request: web.Request, handler: Any
+    ) -> web.Response:
+        """Enforce rate limiting per client IP."""
+        client_ip = request.remote or "unknown"
+
+        is_allowed, remaining = self._rate_limiter.is_allowed(client_ip)
+
+        if not is_allowed:
+            logger.warning(
+                "rate_limit_exceeded",
+                client_ip=client_ip,
+                path=request.path,
+            )
+            return web.json_response(
+                {"error": "Rate limit exceeded", "retry_after": self._rate_limit_window},
+                status=429,
+                headers={"Retry-After": str(self._rate_limit_window)},
+            )
+
+        response = await handler(request)
+        response.headers["X-RateLimit-Remaining"] = str(remaining)
+        return response
+
+    @web.middleware
+    async def _auth_middleware(
+        self, request: web.Request, handler: Any
+    ) -> web.Response:
+        """Require API key authentication for protected endpoints."""
+        # Allow health/ready endpoints without authentication (for k8s probes)
+        if request.path in ["/health", "/ready", "/metrics", "/metrics/prometheus"]:
+            return await handler(request)
+
+        # Check for API key in X-API-Key header or Authorization Bearer token
+        api_key = request.headers.get("X-API-Key") or request.headers.get(
+            "Authorization", ""
+        ).replace("Bearer ", "")
+
+        if not api_key or api_key != self._api_key:
+            logger.warning(
+                "unauthorized_api_access",
+                client_ip=request.remote,
+                path=request.path,
+            )
+            return web.json_response(
+                {"error": "Unauthorized", "message": "Valid API key required"},
+                status=401,
+            )
+
+        return await handler(request)
 
     def set_bot(self, bot: Any) -> None:
         """Set reference to trading bot for status checks.
@@ -802,6 +967,10 @@ def create_health_server(
     port: int = 8080,
     bot: Any = None,
     database: Any = None,
+    api_key: str = "",
+    cors_origins: list[str] | None = None,
+    rate_limit_requests: int = 100,
+    rate_limit_window: int = 60,
 ) -> HealthCheckServer:
     """Factory function to create a configured HealthCheckServer.
 
@@ -810,11 +979,22 @@ def create_health_server(
         port: Port to listen on.
         bot: Optional trading bot reference.
         database: Optional database reference.
+        api_key: API key required for authenticated endpoints.
+        cors_origins: List of allowed CORS origins.
+        rate_limit_requests: Max requests per rate limit window.
+        rate_limit_window: Rate limit window in seconds.
 
     Returns:
         Configured HealthCheckServer instance.
     """
-    server = HealthCheckServer(host=host, port=port)
+    server = HealthCheckServer(
+        host=host,
+        port=port,
+        api_key=api_key,
+        cors_origins=cors_origins,
+        rate_limit_requests=rate_limit_requests,
+        rate_limit_window=rate_limit_window,
+    )
 
     if bot:
         server.set_bot(bot)

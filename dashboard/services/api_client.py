@@ -53,16 +53,22 @@ class APIClient:
     """
 
     def __init__(self) -> None:
-        """Initialize API client with configured timeout."""
+        """Initialize API client with configured timeout and authentication."""
         self._client: httpx.AsyncClient | None = None
         self._base_url = config.api_base_url
         self._timeout = config.api_timeout
+        self._api_key = config.api_key.get_secret_value() if config.api_key else ""
 
     async def __aenter__(self) -> "APIClient":
         """Enter async context and create HTTP client."""
+        headers = {}
+        if self._api_key:
+            headers["X-API-Key"] = self._api_key
+
         self._client = httpx.AsyncClient(
             base_url=self._base_url,
             timeout=self._timeout,
+            headers=headers,
         )
         return self
 
