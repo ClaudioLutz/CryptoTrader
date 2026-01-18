@@ -20,8 +20,53 @@ from dashboard.services.data_models import OrderData, TradeData
 # Available chart timeframes
 TIMEFRAMES = ["1h", "4h", "1d", "1w"]
 TIMEFRAME_LABELS = {"1h": "1H", "4h": "4H", "1d": "1D", "1w": "1W"}
-# Candle limits per timeframe (aim for ~7 days of data)
-TIMEFRAME_LIMITS = {"1h": 168, "4h": 42, "1d": 30, "1w": 12}
+# Timeframe durations in hours for dynamic calculation
+TIMEFRAME_HOURS = {"1h": 1, "4h": 4, "1d": 24, "1w": 168}
+# Minimum candle limits per timeframe (fallback when no trades exist)
+MIN_CANDLE_LIMITS = {"1h": 48, "4h": 24, "1d": 30, "1w": 12}
+# Maximum candles to fetch (prevent excessive API calls)
+MAX_CANDLES = 500
+
+
+def _calculate_candle_limit(trades: list[TradeData], timeframe: str) -> int:
+    """Calculate how many candles needed to cover all trade history.
+
+    Dynamically determines the required number of OHLCV candles based on
+    the earliest trade timestamp, ensuring the price line extends to cover
+    all trade markers on the chart.
+
+    Args:
+        trades: List of trades for the symbol.
+        timeframe: Chart timeframe (1h, 4h, 1d, 1w).
+
+    Returns:
+        Number of candles to fetch.
+    """
+    min_limit = MIN_CANDLE_LIMITS.get(timeframe, 48)
+
+    if not trades:
+        return min_limit
+
+    # Find earliest trade timestamp
+    earliest_trade = min(t.timestamp for t in trades)
+    now = datetime.now(timezone.utc)
+
+    # Handle timezone-naive timestamps
+    if earliest_trade.tzinfo is None:
+        earliest_trade = earliest_trade.replace(tzinfo=timezone.utc)
+
+    # Calculate time difference
+    time_diff = now - earliest_trade
+
+    # Get hours per candle for this timeframe
+    hours_per_candle = TIMEFRAME_HOURS.get(timeframe, 1)
+
+    # Calculate needed candles with buffer (extra 10% + 5 candles for safety)
+    hours_needed = time_diff.total_seconds() / 3600
+    candles_needed = int(hours_needed / hours_per_candle * 1.1) + 5
+
+    # Return at least min_limit, capped at MAX_CANDLES
+    return max(min_limit, min(candles_needed, MAX_CANDLES))
 
 
 def format_price(price: Decimal, symbol: str) -> str:
@@ -107,7 +152,9 @@ def _create_pair_row(symbol: str) -> None:
 
                 # Get current timeframe or default to 1h
                 timeframe = state.chart_timeframe_by_symbol.get(sym, "1h")
-                limit = TIMEFRAME_LIMITS.get(timeframe, 48)
+                # Dynamically calculate candles needed based on trade history
+                symbol_trades = state.trades_by_symbol.get(sym, [])
+                limit = _calculate_candle_limit(symbol_trades, timeframe)
                 await state.refresh_ohlcv(sym, timeframe=timeframe, limit=limit)
                 state.expanded_rows.add(sym)
 
@@ -121,7 +168,9 @@ def _create_pair_row(symbol: str) -> None:
         async def change_timeframe(timeframe: str, sym=symbol, cont=container) -> None:
             """Change chart timeframe and refresh data."""
             state.chart_timeframe_by_symbol[sym] = timeframe
-            limit = TIMEFRAME_LIMITS.get(timeframe, 48)
+            # Dynamically calculate candles needed based on trade history
+            symbol_trades = state.trades_by_symbol.get(sym, [])
+            limit = _calculate_candle_limit(symbol_trades, timeframe)
             await state.refresh_ohlcv(sym, timeframe=timeframe, limit=limit)
 
             # Rebuild the expansion content
@@ -168,7 +217,9 @@ def _create_chart_with_controls(symbol: str) -> None:
     ) -> None:
         """Change timeframe, fetch new data, and rebuild chart."""
         state.chart_timeframe_by_symbol[sym] = timeframe
-        limit = TIMEFRAME_LIMITS.get(timeframe, 48)
+        # Dynamically calculate candles needed based on trade history
+        symbol_trades = state.trades_by_symbol.get(sym, [])
+        limit = _calculate_candle_limit(symbol_trades, timeframe)
         await state.refresh_ohlcv(sym, timeframe=timeframe, limit=limit)
         rebuild_fn()
         # Update button styles
@@ -219,12 +270,12 @@ def _create_mini_chart(symbol: str) -> None:
 
     chart = ui.plotly(fig).classes("mini-price-chart")
     chart._props["config"] = {
-        "scrollZoom": True,  # Enable scroll to zoom
+        "scrollZoom": False,  # Disable scroll zoom (prevents page scroll interference)
         "displayModeBar": "hover",  # Show toolbar on hover
         "displaylogo": False,
         "responsive": True,
         "staticPlot": False,
-        "modeBarButtonsToRemove": ["lasso2d", "select2d"],  # Remove selection tools
+        "modeBarButtonsToRemove": ["lasso2d", "select2d", "pan2d", "zoom2d"],
     }
 
 
@@ -322,17 +373,18 @@ def _create_mini_figure(
         height=180,
         margin=dict(l=50, r=10, t=5, b=25),
         showlegend=False,
+        dragmode=False,  # Disable drag interactions for mobile scroll
         xaxis=dict(
             showgrid=False,
             showticklabels=True,
             tickfont=dict(color="#6b7280", size=9),
-            fixedrange=False,  # Enable horizontal zoom/pan
+            fixedrange=True,  # Disable horizontal zoom/pan for mobile scroll
         ),
         yaxis=dict(
             showgrid=True,
             gridcolor="rgba(15, 52, 96, 0.5)",
             tickfont=dict(color="#6b7280", size=9),
-            fixedrange=False,  # Enable vertical zoom/pan
+            fixedrange=True,  # Disable vertical zoom/pan for mobile scroll
             range=[y_min, y_max] if y_min is not None else None,
         ),
         hovermode="x unified",

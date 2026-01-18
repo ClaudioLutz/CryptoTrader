@@ -28,11 +28,10 @@ def calculate_pnl_from_trades(
     trades: list[TradeData],
     current_price: Decimal = Decimal("0"),
 ) -> PnLResult:
-    """Calculate realized and unrealized P&L from actual trade history.
+    """Calculate realized and unrealized P&L using FIFO (First-In-First-Out) method.
 
-    For grid trading:
-    - Realized P&L = total sell value - total buy value (for closed positions)
-    - Unrealized P&L = (current price - avg buy price) * holdings
+    FIFO matches sells against the oldest buys first, which is the standard
+    method used by Binance and most exchanges for tax reporting.
 
     Args:
         trades: List of TradeData objects.
@@ -41,43 +40,62 @@ def calculate_pnl_from_trades(
     Returns:
         PnLResult with all P&L metrics.
     """
-    total_buy_cost = Decimal("0")
-    total_sell_cost = Decimal("0")
-    total_buy_amount = Decimal("0")
-    total_sell_amount = Decimal("0")
+    # Sort trades by timestamp (oldest first) for FIFO
+    sorted_trades = sorted(trades, key=lambda t: t.timestamp)
+
+    buy_queue: list[dict] = []  # FIFO queue of buys: [{price, qty, cost}, ...]
+    realized_pnl = Decimal("0")
+    total_fees = Decimal("0")
     buy_count = 0
     sell_count = 0
 
-    for trade in trades:
+    for trade in sorted_trades:
         try:
-            # Calculate cost from price * amount if cost not available
+            total_fees += trade.fee if trade.fee else Decimal("0")
             cost = trade.cost if trade.cost else trade.price * trade.amount
-            amount = trade.amount
             side = trade.side.lower()
 
             if side == "buy":
-                total_buy_cost += cost
-                total_buy_amount += amount
+                buy_queue.append({
+                    "price": trade.price,
+                    "qty": trade.amount,
+                    "cost": cost,
+                })
                 buy_count += 1
             elif side == "sell":
-                total_sell_cost += cost
-                total_sell_amount += amount
+                sell_qty = trade.amount
+                sell_proceeds = cost
+                cost_basis = Decimal("0")
                 sell_count += 1
+
+                # Match against oldest buys (FIFO)
+                while sell_qty > 0 and buy_queue:
+                    buy = buy_queue[0]
+                    matched_qty = min(sell_qty, buy["qty"])
+                    cost_basis += buy["price"] * matched_qty
+
+                    buy["qty"] -= matched_qty
+                    sell_qty -= matched_qty
+
+                    if buy["qty"] <= 0:
+                        buy_queue.pop(0)
+
+                # Realized P&L for this sell = proceeds - cost basis
+                realized_pnl += (sell_proceeds - cost_basis)
         except (ValueError, TypeError, AttributeError):
             continue
 
-    # Current holdings (what we bought minus what we sold)
-    holdings = total_buy_amount - total_sell_amount
+    # Remaining holdings from buy queue
+    holdings = sum(Decimal(str(b["qty"])) for b in buy_queue)
 
-    # Average cost basis for current holdings
-    avg_cost = total_buy_cost / total_buy_amount if total_buy_amount > 0 else Decimal("0")
-
-    # Realized P&L = sell proceeds - cost of sold units
-    realized_pnl = (
-        total_sell_cost - (avg_cost * total_sell_amount)
-        if total_sell_amount > 0
-        else Decimal("0")
-    )
+    # Average cost of remaining holdings
+    if holdings > 0:
+        avg_cost = (
+            sum(Decimal(str(b["price"])) * Decimal(str(b["qty"])) for b in buy_queue)
+            / holdings
+        )
+    else:
+        avg_cost = Decimal("0")
 
     # Unrealized P&L = (current price - avg cost) * holdings
     unrealized_pnl = (
@@ -86,16 +104,19 @@ def calculate_pnl_from_trades(
         else Decimal("0")
     )
 
+    # Subtract fees from realized P&L
+    realized_pnl_after_fees = realized_pnl - total_fees
+
     # Total P&L
-    total_pnl = realized_pnl + unrealized_pnl
+    total_pnl = realized_pnl_after_fees + unrealized_pnl
 
     return PnLResult(
-        realized_pnl=realized_pnl,
+        realized_pnl=realized_pnl_after_fees,
         unrealized_pnl=unrealized_pnl,
         total_pnl=total_pnl,
         holdings=holdings,
         avg_cost=avg_cost,
-        cycles=min(buy_count, sell_count),
+        cycles=sell_count,
         buy_count=buy_count,
         sell_count=sell_count,
     )

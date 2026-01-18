@@ -380,15 +380,31 @@ class DashboardState:
     ) -> None:
         """Calculate P&L for different timeframes (1H, 24H, 7D, 30D).
 
-        Filters trades by timestamp and calculates P&L for each period.
+        Uses FIFO against FULL trade history, but only counts realized P&L
+        from sells that occurred within each timeframe. Percentage is calculated
+        against total portfolio investment, not just recent buys.
 
         Args:
             all_trades: All trades from API.
             current_prices: Current prices for each symbol.
         """
-        from dashboard.services.pnl_calculator import calculate_portfolio_pnl
+        from dashboard.services.pnl_calculator import calculate_pnl_from_trades
 
         now = datetime.now(timezone.utc)
+
+        # Get total portfolio investment for percentage calculation
+        total_investment = sum(
+            p.total_investment for p in self.pairs if p.total_investment > 0
+        )
+        if total_investment <= 0:
+            total_investment = Decimal("1000")  # Fallback to avoid div by zero
+
+        # Group ALL trades by symbol for proper FIFO calculation
+        all_trades_by_symbol: dict[str, list] = {}
+        for trade in all_trades:
+            if trade.symbol not in all_trades_by_symbol:
+                all_trades_by_symbol[trade.symbol] = []
+            all_trades_by_symbol[trade.symbol].append(trade)
 
         # Define timeframes
         timeframes = [
@@ -400,43 +416,62 @@ class DashboardState:
 
         for tf_name, tf_delta in timeframes:
             cutoff = now - tf_delta
+            tf_pnl = Decimal("0")
 
-            # Filter trades within the timeframe
-            # Handle both timezone-aware and naive timestamps
-            tf_trades = []
-            for t in all_trades:
-                if not t.timestamp:
-                    continue
-                # Make timestamp timezone-aware if naive
-                ts = t.timestamp
-                if ts.tzinfo is None:
-                    ts = ts.replace(tzinfo=timezone.utc)
-                if ts >= cutoff:
-                    tf_trades.append(t)
+            # For each symbol, calculate realized P&L from sells within timeframe
+            for symbol, symbol_trades in all_trades_by_symbol.items():
+                current_price = current_prices.get(symbol, Decimal("0"))
 
-            if tf_trades:
-                # Group by symbol
-                trades_by_symbol: dict[str, list] = {}
-                for trade in tf_trades:
-                    if trade.symbol not in trades_by_symbol:
-                        trades_by_symbol[trade.symbol] = []
-                    trades_by_symbol[trade.symbol].append(trade)
+                # Sort trades by timestamp for FIFO
+                sorted_trades = sorted(symbol_trades, key=lambda t: t.timestamp)
 
-                # Calculate P&L for this timeframe
-                _, _, tf_pnl, _ = calculate_portfolio_pnl(
-                    trades_by_symbol, current_prices
-                )
+                # FIFO buy queue to track cost basis
+                buy_queue: list[dict] = []
 
-                # Calculate total buy cost for percentage
-                tf_buy_cost = sum(
-                    t.cost if t.cost else t.price * t.amount
-                    for t in tf_trades
-                    if t.side.lower() == "buy"
-                )
-                tf_pct = (tf_pnl / tf_buy_cost * 100) if tf_buy_cost > 0 else Decimal("0")
-            else:
-                tf_pnl = Decimal("0")
-                tf_pct = Decimal("0")
+                for trade in sorted_trades:
+                    if not trade.timestamp:
+                        continue
+
+                    # Make timestamp timezone-aware if naive
+                    ts = trade.timestamp
+                    if ts.tzinfo is None:
+                        ts = ts.replace(tzinfo=timezone.utc)
+
+                    cost = trade.cost if trade.cost else trade.price * trade.amount
+                    side = trade.side.lower()
+
+                    if side == "buy":
+                        buy_queue.append({
+                            "price": trade.price,
+                            "qty": trade.amount,
+                        })
+                    elif side == "sell":
+                        sell_qty = trade.amount
+                        sell_proceeds = cost
+                        cost_basis = Decimal("0")
+
+                        # Match against oldest buys (FIFO)
+                        while sell_qty > 0 and buy_queue:
+                            buy = buy_queue[0]
+                            matched_qty = min(sell_qty, buy["qty"])
+                            cost_basis += buy["price"] * matched_qty
+
+                            buy["qty"] -= matched_qty
+                            sell_qty -= matched_qty
+
+                            if buy["qty"] <= 0:
+                                buy_queue.pop(0)
+
+                        # Only count this sell's P&L if within timeframe
+                        if ts >= cutoff:
+                            realized = sell_proceeds - cost_basis
+                            # Subtract proportional fee
+                            if trade.fee:
+                                realized -= trade.fee
+                            tf_pnl += realized
+
+            # Calculate percentage against total investment
+            tf_pct = (tf_pnl / total_investment * 100) if total_investment > 0 else Decimal("0")
 
             # Update state attributes
             if tf_name == "1h":

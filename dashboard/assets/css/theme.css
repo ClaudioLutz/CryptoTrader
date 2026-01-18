@@ -1385,3 +1385,30 @@ body {
     padding: 4px 12px;
   }
 }
+
+/* ============================================
+   Chart Touch Handling (Mobile Scroll Fix)
+   ============================================ */
+
+/* Allow vertical page scrolling through chart on all devices */
+.mini-price-chart {
+  touch-action: pan-y;
+}
+
+/* Chart wrapper - prevent overflow issues */
+.chart-wrapper {
+  overflow: hidden;
+  position: relative;
+}
+
+/* Mobile: ensure chart doesn't block scrolling */
+@media screen and (max-width: 600px) {
+  .mini-price-chart {
+    touch-action: pan-y pinch-zoom;
+    pointer-events: auto;
+  }
+
+  .mini-price-chart .plotly {
+    touch-action: pan-y;
+  }
+}
