@@ -1,0 +1,41 @@
+{
+  "positions": [
+    {
+      "coin": "TRX",
+      "symbol": "TRX/USDT",
+      "direction": "up",
+      "confidence": 1.0,
+      "entry_price": "0.3173",
+      "amount": "78.6",
+      "cost": "24.97",
+      "opened_at": "2026-03-28T20:25:00+00:00",
+      "close_at": "2026-04-03T20:25:00+00:00",
+      "status": "open"
+    },
+    {
+      "coin": "ANKR",
+      "symbol": "ANKR/USDT",
+      "direction": "up",
+      "confidence": 0.563,
+      "entry_price": "0.00501",
+      "amount": "2183.63273453",
+      "cost": "10.94",
+      "opened_at": "2026-03-29T19:39:30+00:00",
+      "close_at": "2026-04-05T19:39:30+00:00",
+      "status": "open"
+    },
+    {
+      "coin": "AAVE",
+      "symbol": "AAVE/USDT",
+      "direction": "up",
+      "confidence": 0.557,
+      "entry_price": "95.12",
+      "amount": "0.11091253",
+      "cost": "10.55",
+      "opened_at": "2026-03-29T19:39:31+00:00",
+      "close_at": "2026-04-05T19:39:31+00:00",
+      "status": "open"
+    }
+  ],
+  "closed": []
+}
