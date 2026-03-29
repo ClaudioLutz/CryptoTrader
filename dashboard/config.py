@@ -59,13 +59,13 @@ class DashboardConfig(BaseSettings):
 
     # Polling Intervals (Tiered refresh strategy from architecture)
     poll_interval_tier1: float = Field(
-        default=2.0,
+        default=10.0,
         ge=0.5,
         le=60.0,
         description="Polling interval for Tier 1 data (health, P&L) in seconds",
     )
     poll_interval_tier2: float = Field(
-        default=5.0,
+        default=30.0,
         ge=1.0,
         le=120.0,
         description="Polling interval for Tier 2 data (chart, table) in seconds",

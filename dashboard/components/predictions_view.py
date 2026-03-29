@@ -72,15 +72,12 @@ async def _run_training(
     start_time = time.time()
 
     try:
+        from crypto_bot.prediction.prediction_config import DEFAULT_PREDICTION_COINS
         from crypto_bot.prediction.prediction_pipeline import PredictionPipeline
 
         pipeline = PredictionPipeline(
             coin_prediction_path="C:/Codes/coin_prediction",
-            coins=[
-                "BTC", "ETH", "BNB", "LTC", "XRP", "ADA", "ETC", "XLM",
-                "EOS", "TRX", "LINK", "ATOM", "MATIC", "DOGE", "DOT",
-                "SOL", "AVAX", "UNI", "FIL", "NEAR",
-            ],
+            coins=list(DEFAULT_PREDICTION_COINS),
             horizon_days=7,
         )
 

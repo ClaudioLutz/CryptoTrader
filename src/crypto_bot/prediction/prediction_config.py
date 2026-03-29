@@ -6,10 +6,18 @@ from pydantic import Field
 
 from crypto_bot.strategies.base_strategy import StrategyConfig
 
-# Alle 20 Coins aus dem coin_prediction-Projekt
+# Alle Coins mit genuegend Volumen (>$2M 24h) auf Binance Spot
 DEFAULT_PREDICTION_COINS = [
-    "BTC", "ETH", "BNB", "LTC", "XRP", "ADA", "ETC", "XLM", "EOS", "TRX",
-    "LINK", "ATOM", "MATIC", "DOGE", "DOT", "SOL", "AVAX", "UNI", "FIL", "NEAR",
+    # Tier 1: >$30M Volumen
+    "BTC", "ETH", "SOL", "XRP", "BCH", "BNB", "TAO", "TRX", "DOGE", "SUI",
+    # Tier 2: $5M-$30M Volumen
+    "ADA", "ZEC", "FET", "LINK", "WLD", "NEAR", "LTC", "CHZ", "AVAX", "FIL",
+    "ANKR", "ENA",
+    # Tier 3: $2M-$5M Volumen
+    "ONT", "ENJ", "DOT", "XLM", "AAVE", "UNI", "HBAR", "ICP", "ARB", "RENDER",
+    "APT", "CFX", "SEI", "CRV",
+    # Legacy (bestehende Features im coin_prediction-Projekt)
+    "ETC", "EOS", "ATOM", "MATIC",
 ]
 
 
