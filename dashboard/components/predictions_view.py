@@ -209,10 +209,159 @@ def _refresh_results_table(container: ui.column) -> None:
         )
 
 
+async def _fetch_open_positions() -> list[dict]:
+    """Holt offene Positionen und aktuelle Preise vom Exchange."""
+    positions = []
+    try:
+        from crypto_bot.config.settings import get_settings
+        from crypto_bot.exchange.binance_adapter import BinanceAdapter
+
+        settings = get_settings()
+        exchange = BinanceAdapter(settings.exchange)
+        await exchange.connect()
+
+        balances = await exchange.fetch_balance()
+        now = datetime.now(timezone.utc)
+
+        # Alle Coins mit Guthaben > 0 (ausser USDT)
+        for currency, bal in sorted(balances.items()):
+            if currency == "USDT" or bal.total <= 0:
+                continue
+            try:
+                ticker = await exchange.fetch_ticker(f"{currency}/USDT")
+                price = float(ticker.last)
+                amount = float(bal.total)
+                value = price * amount
+
+                if value < 1.0:  # Dust ignorieren
+                    continue
+
+                # Trade-Historie fuer Avg-Preis
+                trades = await exchange.fetch_my_trades(f"{currency}/USDT", limit=50)
+                total_buy_amt = 0.0
+                total_buy_cost = 0.0
+                for t in trades:
+                    if t.side.value == "buy":
+                        total_buy_amt += float(t.amount)
+                        total_buy_cost += float(t.cost)
+
+                avg_buy = total_buy_cost / total_buy_amt if total_buy_amt > 0 else price
+                cost = avg_buy * amount
+                pnl = value - cost
+                pnl_pct = (pnl / cost * 100) if cost > 0 else 0
+
+                positions.append({
+                    "coin": currency,
+                    "amount": f"{amount:.4f}",
+                    "avg_price": f"${avg_buy:.4f}",
+                    "current_price": f"${price:.4f}",
+                    "value": f"${value:.2f}",
+                    "pnl": pnl,
+                    "pnl_display": f"${pnl:+.2f} ({pnl_pct:+.1f}%)",
+                    "pnl_color": "positive" if pnl >= 0 else "negative",
+                })
+            except Exception as e:
+                logger.warning("Failed to fetch %s: %s", currency, e)
+
+        await exchange.disconnect()
+    except Exception as e:
+        logger.exception("Failed to fetch positions: %s", e)
+
+    return positions
+
+
+def _create_positions_section(container: ui.column) -> None:
+    """Erstellt die Sektion fuer offene Positionen (initial leer)."""
+    container.clear()
+    with container:
+        with ui.row().classes("items-center gap-2"):
+            ui.spinner("dots", size="sm")
+            ui.label("Positionen werden geladen...").classes("text-secondary")
+
+
+async def _refresh_positions(container: ui.column) -> None:
+    """Aktualisiert die offene-Positionen-Anzeige."""
+    positions = await _fetch_open_positions()
+    container.clear()
+
+    with container:
+        if not positions:
+            ui.label("Keine offenen Positionen").classes("text-secondary")
+            return
+
+        # P/L Zusammenfassung
+        total_value = sum(float(p["value"].replace("$", "")) for p in positions)
+        total_pnl = sum(p["pnl"] for p in positions)
+
+        with ui.row().classes("w-full gap-4 mb-4"):
+            with ui.card().classes("prediction-summary-card"):
+                ui.label(f"${total_value:.2f}").classes("text-h4 text-primary")
+                ui.label("Gesamtwert").classes("text-caption text-secondary")
+
+            pnl_color = "text-positive" if total_pnl >= 0 else "text-negative"
+            with ui.card().classes("prediction-summary-card"):
+                ui.label(f"${total_pnl:+.2f}").classes(f"text-h4 {pnl_color}")
+                ui.label("Unrealized P/L").classes("text-caption text-secondary")
+
+            with ui.card().classes("prediction-summary-card"):
+                ui.label(str(len(positions))).classes("text-h4 text-primary")
+                ui.label("Offene Positionen").classes("text-caption text-secondary")
+
+        # Positions-Tabelle
+        columns = [
+            {"name": "coin", "label": "Coin", "field": "coin", "align": "left", "sortable": True},
+            {"name": "amount", "label": "Menge", "field": "amount", "align": "right"},
+            {"name": "avg_price", "label": "Avg. Einkauf", "field": "avg_price", "align": "right"},
+            {"name": "current_price", "label": "Aktuell", "field": "current_price", "align": "right"},
+            {"name": "value", "label": "Wert", "field": "value", "align": "right"},
+            {"name": "pnl_display", "label": "P/L", "field": "pnl_display", "align": "right", "sortable": True},
+        ]
+
+        rows = [{k: v for k, v in p.items() if k != "pnl" and k != "pnl_color"} for p in positions]
+
+        table = ui.table(columns=columns, rows=rows, row_key="coin").classes(
+            "positions-table w-full"
+        )
+
+        table.add_slot(
+            "body-cell-pnl_display",
+            """
+            <q-td :props="props">
+                <span :style="props.value.startsWith('+') ? 'color: #4caf50' : 'color: #f44336'">
+                    {{ props.value }}
+                </span>
+            </q-td>
+            """,
+        )
+
+
 def create_predictions_view() -> None:
-    """Erstellt den Predictions-Tab mit Training-Button und Ergebnis-Tabelle."""
+    """Erstellt den Predictions-Tab mit Positionen, Training und Ergebnissen."""
     with ui.column().classes("predictions-view gap-4 w-full p-4"):
-        # Header
+        # =====================================================================
+        # Sektion 1: Offene Positionen
+        # =====================================================================
+        with ui.row().classes("items-center gap-2 mb-2"):
+            ui.icon("account_balance_wallet", size="24px").classes("text-secondary")
+            ui.label("Offene Positionen").classes("text-h6 text-primary")
+
+        positions_container = ui.column().classes("w-full mb-6 open-positions")
+        _create_positions_section(positions_container)
+
+        # Refresh-Button
+        refresh_btn = ui.button("Aktualisieren", icon="refresh", color="secondary").classes(
+            "mb-6"
+        )
+        refresh_btn.on_click(lambda: _refresh_positions(positions_container))
+
+        # Auto-Refresh beim Laden
+        ui.timer(0.5, lambda: _refresh_positions(positions_container), once=True)
+
+        ui.separator().classes("mb-4")
+
+        # =====================================================================
+        # Sektion 2: Predictions Training
+        # =====================================================================
         with ui.row().classes("items-center gap-2 mb-2"):
             ui.icon("psychology", size="24px").classes("text-secondary")
             ui.label("7-Tage Predictions").classes("text-h6 text-primary")
@@ -224,10 +373,6 @@ def create_predictions_view() -> None:
                     "Trainiert ein LightGBM-Modell auf historischen Daten und erstellt "
                     "7-Tage-Vorhersagen (Up/Down) fuer 20 Kryptowaehrungen."
                 ).classes("text-secondary")
-                ui.label(
-                    "Der Prozess dauert ca. 5-15 Minuten: Daten laden, Features berechnen, "
-                    "Modelle trainieren, Predictions generieren."
-                ).classes("text-caption text-secondary")
 
         # Training Controls
         with ui.row().classes("items-center gap-4 mb-4"):
@@ -282,6 +427,15 @@ def create_predictions_view() -> None:
             color: var(--text-secondary, #aaa);
         }
         .predictions-table tbody tr td {
+            color: var(--text-primary, #fff);
+        }
+        .positions-table {
+            background: var(--bg-secondary, #1e1e1e) !important;
+        }
+        .positions-table thead tr th {
+            color: var(--text-secondary, #aaa);
+        }
+        .positions-table tbody tr td {
             color: var(--text-primary, #fff);
         }
     """)

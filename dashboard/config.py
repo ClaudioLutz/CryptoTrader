@@ -35,7 +35,7 @@ class DashboardConfig(BaseSettings):
 
     # API Configuration
     api_base_url: str = Field(
-        default="http://localhost:8080",
+        default="http://localhost:8082",
         description="Base URL for the trading bot REST API",
     )
     api_key: SecretStr = Field(

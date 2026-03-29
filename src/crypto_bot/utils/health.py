@@ -56,6 +56,91 @@ class RateLimiter:
         return True, self._max_requests - current_count - 1
 
 
+# Input validation constants
+_MAX_LIMIT = 1000
+_MAX_DAYS = 365
+_VALID_PERIODS = {"daily", "weekly", "monthly", "all"}
+_VALID_TIMEFRAMES = {"1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"}
+_SYMBOL_PATTERN = r"^[A-Z0-9]{2,10}/[A-Z0-9]{2,10}$"
+
+
+def _validate_limit(value: str, default: int = 100) -> int:
+    """Validate and clamp limit parameter.
+
+    Args:
+        value: Query parameter value.
+        default: Default if parsing fails.
+
+    Returns:
+        Validated limit between 1 and _MAX_LIMIT.
+    """
+    try:
+        limit = int(value)
+        return max(1, min(limit, _MAX_LIMIT))
+    except (ValueError, TypeError):
+        return default
+
+
+def _validate_days(value: str, default: int = 30) -> int:
+    """Validate and clamp days parameter.
+
+    Args:
+        value: Query parameter value.
+        default: Default if parsing fails.
+
+    Returns:
+        Validated days between 1 and _MAX_DAYS.
+    """
+    try:
+        days = int(value)
+        return max(1, min(days, _MAX_DAYS))
+    except (ValueError, TypeError):
+        return default
+
+
+def _validate_symbol(value: str | None) -> str | None:
+    """Validate symbol format.
+
+    Args:
+        value: Symbol like "BTC/USDT".
+
+    Returns:
+        Validated symbol or None if invalid.
+    """
+    import re
+    if not value:
+        return None
+    if re.match(_SYMBOL_PATTERN, value.upper()):
+        return value.upper()
+    return None
+
+
+def _validate_period(value: str, default: str = "daily") -> str:
+    """Validate period parameter.
+
+    Args:
+        value: Period value.
+        default: Default if invalid.
+
+    Returns:
+        Validated period.
+    """
+    return value.lower() if value.lower() in _VALID_PERIODS else default
+
+
+def _validate_timeframe(value: str, default: str = "1h") -> str:
+    """Validate timeframe parameter.
+
+    Args:
+        value: Timeframe value.
+        default: Default if invalid.
+
+    Returns:
+        Validated timeframe.
+    """
+    return value.lower() if value.lower() in _VALID_TIMEFRAMES else default
+
+
 class HealthCheckServer:
     """HTTP server providing health check endpoints and dashboard API.
 
@@ -104,7 +189,9 @@ class HealthCheckServer:
         self._rate_limit_window = rate_limit_window
 
         # Create app with security middlewares
+        # Order matters: logging first, then security headers, CORS, rate limiting, auth
         middlewares = [
+            self._request_logging_middleware,
             self._security_headers_middleware,
             self._cors_middleware,
             self._rate_limit_middleware,
@@ -142,6 +229,44 @@ class HealthCheckServer:
         self._app.router.add_get("/api/ohlcv", self._ohlcv_handler)
 
     # Security Middlewares
+    @web.middleware
+    async def _request_logging_middleware(
+        self, request: web.Request, handler: Any
+    ) -> web.Response:
+        """Log all API requests for audit trail."""
+        start_time = time()
+        client_ip = request.remote or "unknown"
+
+        # Execute the request
+        try:
+            response = await handler(request)
+            duration_ms = (time() - start_time) * 1000
+
+            # Log API requests (skip health probes to reduce noise)
+            if request.path.startswith("/api/"):
+                logger.info(
+                    "api_request",
+                    client_ip=client_ip,
+                    method=request.method,
+                    path=request.path,
+                    status=response.status,
+                    duration_ms=round(duration_ms, 2),
+                    user_agent=request.headers.get("User-Agent", "")[:100],
+                )
+
+            return response
+        except Exception as e:
+            duration_ms = (time() - start_time) * 1000
+            logger.error(
+                "api_request_error",
+                client_ip=client_ip,
+                method=request.method,
+                path=request.path,
+                error=str(e),
+                duration_ms=round(duration_ms, 2),
+            )
+            raise
+
     @web.middleware
     async def _security_headers_middleware(
         self, request: web.Request, handler: Any
@@ -435,8 +560,8 @@ class HealthCheckServer:
                 status=503,
             )
 
-        limit = int(request.query.get("limit", "100"))
-        symbol = request.query.get("symbol")
+        limit = _validate_limit(request.query.get("limit", "100"))
+        symbol = _validate_symbol(request.query.get("symbol"))
 
         try:
             trades_list = []
@@ -569,7 +694,7 @@ class HealthCheckServer:
                 status=503,
             )
 
-        period = request.query.get("period", "daily")
+        period = _validate_period(request.query.get("period", "daily"))
 
         try:
             from crypto_bot.data.persistence import TradeRepository
@@ -582,8 +707,10 @@ class HealthCheckServer:
                 start_date = now - timedelta(days=7)
             elif period == "monthly":
                 start_date = now - timedelta(days=30)
-            else:
+            elif period == "all":
                 start_date = None
+            else:
+                start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
             async with self._database.session() as session:
                 repo = TradeRepository(session)
@@ -630,7 +757,7 @@ class HealthCheckServer:
                 status=503,
             )
 
-        days = int(request.query.get("days", "30"))
+        days = _validate_days(request.query.get("days", "30"))
 
         try:
             from sqlalchemy import select
@@ -670,7 +797,7 @@ class HealthCheckServer:
                 status=503,
             )
 
-        symbol = request.query.get("symbol")
+        symbol = _validate_symbol(request.query.get("symbol"))
 
         try:
             orders_list = []
@@ -762,14 +889,51 @@ class HealthCheckServer:
                         "active_sell_orders": stats.active_sell_orders,
                     }
 
-                # Get grid config if it's a grid strategy
+                # Strategy-specific config
                 if hasattr(strategy, "_config"):
                     config = strategy._config
-                    strat_info["config"] = {
-                        "lower_price": str(getattr(config, "lower_price", 0)),
-                        "upper_price": str(getattr(config, "upper_price", 0)),
-                        "num_grids": getattr(config, "num_grids", 0),
-                        "total_investment": str(getattr(config, "total_investment", 0)),
+                    if hasattr(config, "coins"):
+                        # Prediction strategy
+                        strat_info["config"] = {
+                            "type": "prediction",
+                            "coins": getattr(config, "coins", []),
+                            "total_capital": str(getattr(config, "total_capital", 0)),
+                            "max_per_coin_pct": str(getattr(config, "max_per_coin_pct", 0)),
+                            "max_total_exposure_pct": str(getattr(config, "max_total_exposure_pct", 0)),
+                            "min_confidence": getattr(config, "min_confidence", 0),
+                            "prediction_horizon_days": getattr(config, "prediction_horizon_days", 7),
+                        }
+                    else:
+                        # Grid strategy
+                        strat_info["config"] = {
+                            "type": "grid",
+                            "lower_price": str(getattr(config, "lower_price", 0)),
+                            "upper_price": str(getattr(config, "upper_price", 0)),
+                            "num_grids": getattr(config, "num_grids", 0),
+                            "total_investment": str(getattr(config, "total_investment", 0)),
+                        }
+
+                # Prediction positions
+                if hasattr(strategy, "_tracker"):
+                    tracker = strategy._tracker
+                    positions = tracker.get_open_positions()
+                    strat_info["positions"] = [
+                        {
+                            "coin": p.coin,
+                            "direction": p.direction,
+                            "entry_price": str(p.entry_price),
+                            "amount": str(p.amount),
+                            "cost": str(p.cost),
+                            "opened_at": p.opened_at.isoformat(),
+                            "close_at": p.close_at.isoformat(),
+                            "status": p.status,
+                        }
+                        for p in positions
+                    ]
+                    strat_info["statistics"] = {
+                        "open_positions": len(positions),
+                        "total_exposure": str(tracker.get_total_exposure()),
+                        "realized_pnl": str(tracker.get_total_pnl()),
                     }
 
                 strategies_data.append(strat_info)
@@ -791,9 +955,11 @@ class HealthCheckServer:
                 status=503,
             )
 
-        symbol = request.query.get("symbol", "BTC/USDT")
-        timeframe = request.query.get("timeframe", "1h")
-        limit = int(request.query.get("limit", "100"))
+        # Validate and sanitize query parameters
+        raw_symbol = request.query.get("symbol", "BTC/USDT")
+        symbol = _validate_symbol(raw_symbol) or "BTC/USDT"
+        timeframe = _validate_timeframe(request.query.get("timeframe", "1h"))
+        limit = _validate_limit(request.query.get("limit", "100"))
 
         try:
             exchange = getattr(self._bot, "_exchange", None)

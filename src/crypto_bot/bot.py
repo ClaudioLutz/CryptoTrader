@@ -526,37 +526,43 @@ class TradingBot:
 
         try:
             if self._is_multi_symbol:
-                # Multi-Symbol: alle offenen Orders auf einmal abfragen
-                open_orders = await self._exchange.fetch_open_orders(None)
+                # Multi-Symbol: pro aktive Order das Symbol bestimmen und pruefen
+                if hasattr(self._strategy, "_active_orders"):
+                    for order_id in list(self._strategy._active_orders.keys()):
+                        coin = self._strategy._active_orders.get(order_id)
+                        symbol = (
+                            f"{coin}/{self._strategy._config.quote_currency}"
+                            if isinstance(coin, str)
+                            else self._strategy.symbol
+                        )
+                        try:
+                            order = await self._exchange.fetch_order(
+                                order_id, symbol
+                            )
+                            if order.status == OrderStatus.CLOSED:
+                                await self._strategy.on_order_filled(order)
+                            elif order.status == OrderStatus.CANCELED:
+                                await self._strategy.on_order_cancelled(order)
+                        except OrderNotFoundError:
+                            self._logger.warning(
+                                "order_not_found", order_id=order_id, symbol=symbol
+                            )
             else:
                 open_orders = await self._exchange.fetch_open_orders(
                     self._strategy.symbol
                 )
-            open_order_ids = {o.id for o in open_orders}
+                open_order_ids = {o.id for o in open_orders}
 
-            # Check tracked orders for fills
-            if hasattr(self._strategy, "_active_orders"):
-                for order_id in list(self._strategy._active_orders.keys()):
-                    if order_id not in open_order_ids:
-                        # Symbol fuer fetch_order bestimmen
-                        if self._is_multi_symbol:
-                            coin = self._strategy._active_orders.get(order_id)
-                            symbol = (
-                                f"{coin}/{self._strategy._config.quote_currency}"
-                                if isinstance(coin, str)
-                                else self._strategy.symbol
+                if hasattr(self._strategy, "_active_orders"):
+                    for order_id in list(self._strategy._active_orders.keys()):
+                        if order_id not in open_order_ids:
+                            order = await self._exchange.fetch_order(
+                                order_id, self._strategy.symbol
                             )
-                        else:
-                            symbol = self._strategy.symbol
-
-                        # Order no longer open - check if filled
-                        order = await self._exchange.fetch_order(
-                            order_id, symbol
-                        )
-                        if order.status == OrderStatus.CLOSED:
-                            await self._strategy.on_order_filled(order)
-                        elif order.status == OrderStatus.CANCELED:
-                            await self._strategy.on_order_cancelled(order)
+                            if order.status == OrderStatus.CLOSED:
+                                await self._strategy.on_order_filled(order)
+                            elif order.status == OrderStatus.CANCELED:
+                                await self._strategy.on_order_cancelled(order)
 
         except Exception as e:
             self._logger.error("order_check_failed", error=str(e))

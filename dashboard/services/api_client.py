@@ -158,6 +158,10 @@ class APIClient:
                 stats = strategy.get("statistics", {})
                 config = strategy.get("config", {})
 
+                # Skip multi-symbol prediction strategies for pairs view
+                if symbol == "MULTI/USDT":
+                    continue
+
                 # Fetch current price from OHLCV (1m candle for latest price)
                 current_price = await self._get_current_price(symbol)
 

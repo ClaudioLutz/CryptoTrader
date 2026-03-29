@@ -358,7 +358,7 @@ def create_prediction_strategy(settings: AppSettings) -> PredictionStrategy:
         name="prediction",
         symbol="MULTI/USDT",
         coins=list(DEFAULT_PREDICTION_COINS),
-        total_capital=Decimal("1000"),
+        total_capital=Decimal("0"),  # Dynamisch aus USDT-Balance
         dry_run=settings.trading.dry_run,
     )
     return PredictionStrategy(config)

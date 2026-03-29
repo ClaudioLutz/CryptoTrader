@@ -75,6 +75,10 @@ class PredictionStrategy:
         """Initialisiert die Strategie: erstes Retraining und Positions-Oeffnung."""
         self._context = context
 
+        # Kapital dynamisch setzen falls nicht manuell konfiguriert
+        if self._config.total_capital <= Decimal(0):
+            await self._update_capital_from_balance()
+
         if not self._initialized:
             logger.info("prediction_strategy_initializing", coins=len(self._config.coins))
             await self._run_retrain()
@@ -88,6 +92,14 @@ class PredictionStrategy:
         else:
             # Aus State wiederhergestellt — nur abgelaufene Positionen pruefen
             logger.info("prediction_strategy_restored_from_state")
+
+    async def _update_capital_from_balance(self) -> None:
+        """Setzt total_capital dynamisch auf den aktuellen USDT-Bestand."""
+        if not self._context:
+            return
+        balance = await self._context.get_balance(self._config.quote_currency)
+        self._config.total_capital = balance
+        logger.info("capital_set_from_balance", total_capital=str(balance))
 
     async def on_tick(self, ticker: Ticker) -> None:
         """Wird alle 60 Sekunden aufgerufen.
@@ -198,6 +210,37 @@ class PredictionStrategy:
             open_positions=len(open_positions),
             total_exposure=str(self._tracker.get_total_exposure()),
             realized_pnl=str(total_pnl),
+        )
+
+    def register_manual_position(
+        self,
+        coin: str,
+        entry_price: Decimal,
+        amount: Decimal,
+        cost: Decimal,
+        opened_at: datetime,
+        close_after_days: int = 7,
+    ) -> None:
+        """Registriert eine manuell geoeffnete Position fuer automatisches Closing."""
+        symbol = f"{coin}/{self._config.quote_currency}"
+        position = PredictionPosition(
+            coin=coin,
+            symbol=symbol,
+            direction="up",
+            confidence=1.0,
+            entry_price=entry_price,
+            amount=amount,
+            cost=cost,
+            buy_order_id="MANUAL",
+            opened_at=opened_at,
+            close_at=opened_at + timedelta(days=close_after_days),
+        )
+        self._tracker.add_position(position)
+        logger.info(
+            "manual_position_registered",
+            coin=coin,
+            amount=str(amount),
+            close_at=position.close_at.isoformat(),
         )
 
     # =========================================================================

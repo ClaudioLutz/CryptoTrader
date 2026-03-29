@@ -33,7 +33,7 @@ class PredictionConfig(StrategyConfig):
     symbol: str = "MULTI/USDT"
     coins: list[str] = Field(default_factory=lambda: list(DEFAULT_PREDICTION_COINS))
     quote_currency: str = "USDT"
-    total_capital: Decimal = Decimal("1000")
+    total_capital: Decimal = Decimal("0")  # 0 = dynamisch aus USDT-Balance
     max_per_coin_pct: Decimal = Decimal("0.10")
     max_total_exposure_pct: Decimal = Decimal("0.60")
     min_confidence: float = Field(default=0.55, ge=0.50, le=1.0)
