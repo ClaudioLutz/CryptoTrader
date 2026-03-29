@@ -1,0 +1,363 @@
+"""Prediction-basierte Trading-Strategie.
+
+Oeffnet Positionen basierend auf 7-Tage ML-Vorhersagen
+und schliesst sie nach exakt 7 Tagen via Market Sell.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
+from typing import Any, Optional
+
+import structlog
+
+from crypto_bot.exchange.base_exchange import Order, OrderSide, Ticker
+from crypto_bot.prediction.position_tracker import PositionTracker, PredictionPosition
+from crypto_bot.prediction.prediction_config import PredictionConfig
+from crypto_bot.prediction.prediction_pipeline import PredictionPipeline, PredictionResult
+from crypto_bot.strategies.base_strategy import ExecutionContext
+
+logger = structlog.get_logger(__name__)
+
+STATE_VERSION = 1
+
+
+class PredictionStrategy:
+    """Trading-Strategie basierend auf ML-Vorhersagen.
+
+    Handelt alle 20 Coins aus dem coin_prediction-Projekt.
+    Trainiert taeglich neu und oeffnet/schliesst Positionen
+    basierend auf Confidence-gewichteten Signalen.
+    """
+
+    def __init__(
+        self,
+        config: PredictionConfig,
+        context: Optional[ExecutionContext] = None,
+    ) -> None:
+        self._config = config
+        self._context = context
+        self._tracker = PositionTracker()
+        self._pipeline = PredictionPipeline(
+            config.coin_prediction_path,
+            config.coins,
+            config.prediction_horizon_days,
+        )
+        self._latest_predictions: dict[str, PredictionResult] = {}
+        self._last_retrain_date: Optional[date] = None
+        self._active_orders: dict[str, str] = {}  # order_id -> coin
+        self._symbols = [f"{coin}/{config.quote_currency}" for coin in config.coins]
+        self._initialized = False
+        self._retrain_lock = asyncio.Lock()
+        self._retraining = False
+
+    @property
+    def name(self) -> str:
+        return "prediction_multi"
+
+    @property
+    def symbol(self) -> str:
+        return "MULTI/USDT"
+
+    @property
+    def symbols(self) -> list[str]:
+        """Alle gehandelten Symbole."""
+        return self._symbols
+
+    @property
+    def tick_interval(self) -> float:
+        """60 Sekunden statt 1 Sekunde — taegl. Strategie braucht keine Sekunden-Ticks."""
+        return 60.0
+
+    async def initialize(self, context: ExecutionContext) -> None:
+        """Initialisiert die Strategie: erstes Retraining und Positions-Oeffnung."""
+        self._context = context
+
+        if not self._initialized:
+            logger.info("prediction_strategy_initializing", coins=len(self._config.coins))
+            await self._run_retrain()
+            await self._process_predictions()
+            self._initialized = True
+            logger.info(
+                "prediction_strategy_initialized",
+                predictions=len(self._latest_predictions),
+                open_positions=len(self._tracker.get_open_positions()),
+            )
+        else:
+            # Aus State wiederhergestellt — nur abgelaufene Positionen pruefen
+            logger.info("prediction_strategy_restored_from_state")
+
+    async def on_tick(self, ticker: Ticker) -> None:
+        """Wird alle 60 Sekunden aufgerufen.
+
+        1. Abgelaufene Positionen schliessen
+        2. Taegl. Retrain pruefen und ausfuehren
+        """
+        if not self._initialized or not self._context:
+            return
+
+        now = datetime.now(timezone.utc)
+
+        # 1. Abgelaufene Positionen schliessen
+        positions_to_close = self._tracker.get_positions_to_close(now)
+        for pos in positions_to_close:
+            await self._close_position(pos)
+
+        # 2. Taegl. Retrain
+        if self._should_retrain(now) and not self._retraining:
+            self._retraining = True
+            try:
+                await self._run_retrain()
+                await self._process_predictions()
+            finally:
+                self._retraining = False
+
+    async def on_order_filled(self, order: Order) -> None:
+        """Verarbeitet gefuellte Orders (Buy = Position offen, Sell = Position geschlossen)."""
+        if order.id not in self._active_orders:
+            return
+
+        coin = self._active_orders.pop(order.id)
+
+        if order.side == OrderSide.SELL:
+            # Position geschlossen
+            close_price = order.price if order.price else (
+                order.cost / order.filled if order.filled > 0 else Decimal(0)
+            )
+            self._tracker.mark_closed(coin, close_price)
+            logger.info(
+                "prediction_position_closed_by_fill",
+                coin=coin,
+                close_price=str(close_price),
+                filled=str(order.filled),
+            )
+        elif order.side == OrderSide.BUY:
+            logger.info(
+                "prediction_buy_filled",
+                coin=coin,
+                price=str(order.price),
+                filled=str(order.filled),
+            )
+
+    async def on_order_cancelled(self, order: Order) -> None:
+        """Verarbeitet stornierte Orders."""
+        if order.id in self._active_orders:
+            coin = self._active_orders.pop(order.id)
+            logger.warning("prediction_order_cancelled", coin=coin, order_id=order.id)
+
+    def get_state(self) -> dict[str, Any]:
+        """Serialisiert den Strategie-State fuer Persistence."""
+        return {
+            "version": STATE_VERSION,
+            "config": self._config.model_dump(mode="json"),
+            "positions": self._tracker.to_dict(),
+            "active_orders": dict(self._active_orders),
+            "last_retrain_date": (
+                self._last_retrain_date.isoformat() if self._last_retrain_date else None
+            ),
+            "latest_predictions": {
+                coin: {
+                    "coin": p.coin,
+                    "direction": p.direction,
+                    "probability": p.probability,
+                    "confidence": p.confidence,
+                    "features_date": p.features_date,
+                }
+                for coin, p in self._latest_predictions.items()
+            },
+            "initialized": self._initialized,
+        }
+
+    @classmethod
+    def from_state(
+        cls, state: dict[str, Any], context: ExecutionContext
+    ) -> PredictionStrategy:
+        """Stellt die Strategie aus gespeichertem State wieder her."""
+        config = PredictionConfig(**state["config"])
+        strategy = cls(config, context)
+        strategy._tracker = PositionTracker.from_dict(state["positions"])
+        strategy._active_orders = state.get("active_orders", {})
+
+        if state.get("last_retrain_date"):
+            strategy._last_retrain_date = date.fromisoformat(state["last_retrain_date"])
+
+        for coin, pdata in state.get("latest_predictions", {}).items():
+            strategy._latest_predictions[coin] = PredictionResult(**pdata)
+
+        strategy._initialized = state.get("initialized", False)
+        return strategy
+
+    async def shutdown(self) -> None:
+        """Graceful Shutdown — loggt offene Positionen."""
+        open_positions = self._tracker.get_open_positions()
+        total_pnl = self._tracker.get_total_pnl()
+        logger.info(
+            "prediction_strategy_shutdown",
+            open_positions=len(open_positions),
+            total_exposure=str(self._tracker.get_total_exposure()),
+            realized_pnl=str(total_pnl),
+        )
+
+    # =========================================================================
+    # Interne Methoden
+    # =========================================================================
+
+    def _should_retrain(self, now: datetime) -> bool:
+        """Prueft ob ein Retrain faellig ist (1x taegl. zur konfigurierten Zeit)."""
+        if self._last_retrain_date == now.date():
+            return False
+        # Retrain wenn Stunde >= konfigurierte Stunde
+        if now.hour > self._config.retrain_hour_utc:
+            return True
+        if (
+            now.hour == self._config.retrain_hour_utc
+            and now.minute >= self._config.retrain_minute_utc
+        ):
+            return True
+        return False
+
+    async def _run_retrain(self) -> None:
+        """Fuehrt die Prediction-Pipeline in einem Background-Thread aus."""
+        async with self._retrain_lock:
+            logger.info("prediction_retrain_start")
+            try:
+                self._latest_predictions = await self._pipeline.run_full_pipeline()
+                self._last_retrain_date = date.today()
+                logger.info(
+                    "prediction_retrain_complete",
+                    n_predictions=len(self._latest_predictions),
+                )
+            except Exception:
+                logger.exception("prediction_retrain_failed")
+                # Vorherige Predictions behalten
+
+    async def _process_predictions(self) -> None:
+        """Oeffnet Positionen fuer hochkonfidente 'Up'-Predictions."""
+        if not self._context or not self._latest_predictions:
+            return
+
+        usdt_balance = await self._context.get_balance(self._config.quote_currency)
+        current_exposure = self._tracker.get_total_exposure()
+        max_total = self._config.total_capital * self._config.max_total_exposure_pct
+        available = min(usdt_balance, max_total - current_exposure)
+
+        if available <= Decimal(0):
+            logger.info("no_budget_available", balance=str(usdt_balance), exposure=str(current_exposure))
+            return
+
+        # Nur "Up"-Predictions ueber Confidence-Schwelle, sortiert nach Confidence
+        candidates = [
+            p for p in self._latest_predictions.values()
+            if p.direction == "up"
+            and p.confidence >= self._config.min_confidence
+            and not self._tracker.has_position(p.coin)
+        ]
+        candidates.sort(key=lambda p: p.confidence, reverse=True)
+
+        if not candidates:
+            logger.info("no_trade_candidates")
+            return
+
+        logger.info(
+            "processing_predictions",
+            candidates=len(candidates),
+            available_budget=str(available),
+        )
+
+        for pred in candidates:
+            if available <= Decimal("1"):  # Min. 1 USDT
+                break
+
+            position_size = self._calculate_position_size(pred, available)
+            if position_size < Decimal("1"):
+                continue
+
+            symbol = f"{pred.coin}/{self._config.quote_currency}"
+            try:
+                price = await self._context.get_current_price(symbol)
+                if price <= Decimal(0):
+                    continue
+
+                amount = (position_size / price).quantize(Decimal("0.00000001"))
+                if amount <= Decimal(0):
+                    continue
+
+                # Market Buy
+                order_id = await self._context.place_order(
+                    symbol=symbol,
+                    side="buy",
+                    amount=amount,
+                )
+
+                now = datetime.now(timezone.utc)
+                position = PredictionPosition(
+                    coin=pred.coin,
+                    symbol=symbol,
+                    direction="up",
+                    confidence=pred.confidence,
+                    entry_price=price,
+                    amount=amount,
+                    cost=position_size,
+                    buy_order_id=order_id,
+                    opened_at=now,
+                    close_at=now + timedelta(days=self._config.prediction_horizon_days),
+                )
+                self._tracker.add_position(position)
+                self._active_orders[order_id] = pred.coin
+                available -= position_size
+
+                logger.info(
+                    "prediction_position_opened",
+                    coin=pred.coin,
+                    confidence=round(pred.confidence, 3),
+                    size_usdt=str(position_size),
+                    amount=str(amount),
+                    price=str(price),
+                )
+
+            except Exception:
+                logger.exception("position_open_failed", coin=pred.coin)
+
+    def _calculate_position_size(
+        self, pred: PredictionResult, available: Decimal
+    ) -> Decimal:
+        """Berechnet die Positionsgroesse basierend auf Confidence.
+
+        Mapped Confidence [min_confidence, 1.0] auf Allokation [25%, 100%] von max_per_coin.
+        """
+        max_per_coin = self._config.total_capital * self._config.max_per_coin_pct
+
+        confidence_range = 1.0 - self._config.min_confidence
+        if confidence_range <= 0:
+            scale = Decimal("1")
+        else:
+            confidence_above_min = pred.confidence - self._config.min_confidence
+            raw_scale = 0.25 + 0.75 * (confidence_above_min / confidence_range)
+            scale = Decimal(str(min(raw_scale, 1.0)))
+
+        size = (max_per_coin * scale).quantize(Decimal("0.01"))
+        return min(size, available)
+
+    async def _close_position(self, pos: PredictionPosition) -> None:
+        """Schliesst eine Position via Market Sell."""
+        if not self._context:
+            return
+
+        try:
+            order_id = await self._context.place_order(
+                symbol=pos.symbol,
+                side="sell",
+                amount=pos.amount,
+            )
+            self._tracker.mark_closing(pos.coin, order_id)
+            self._active_orders[order_id] = pos.coin
+            logger.info(
+                "prediction_position_close_initiated",
+                coin=pos.coin,
+                amount=str(pos.amount),
+                held_days=self._config.prediction_horizon_days,
+            )
+        except Exception:
+            logger.exception("position_close_failed", coin=pos.coin)

@@ -16,6 +16,7 @@ from dashboard.auth import check_auth, create_login_page, is_auth_enabled
 from dashboard.components.configuration_view import create_configuration_view
 from dashboard.components.header import create_header
 from dashboard.components.pairs_table import create_pairs_table
+from dashboard.components.predictions_view import create_predictions_view
 from dashboard.components.timeframe_row import create_timeframe_row
 from dashboard.components.trade_history import create_trade_history_view
 from dashboard.config import config
@@ -127,6 +128,7 @@ def create_ui() -> None:
     # Tab navigation (Story 9.1, 10.2)
     with ui.tabs().classes("dashboard-tabs w-full") as tabs:
         dashboard_tab = ui.tab("Dashboard", icon="dashboard")
+        predictions_tab = ui.tab("Predictions", icon="psychology")
         history_tab = ui.tab("Trade History", icon="history")
         config_tab = ui.tab("Configuration", icon="settings")
 
@@ -141,6 +143,10 @@ def create_ui() -> None:
                 # Pairs table with embedded mini charts (Epic 4, 7)
                 # Charts are now inside each pair card for better UX
                 create_pairs_table()
+
+        # Predictions tab content
+        with ui.tab_panel(predictions_tab).classes("predictions-panel"):
+            create_predictions_view()
 
         # Trade History tab content (Epic 9)
         with ui.tab_panel(history_tab).classes("history-panel"):

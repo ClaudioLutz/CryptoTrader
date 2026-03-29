@@ -9,6 +9,7 @@ Coordinates all components:
 """
 
 import asyncio
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
@@ -458,6 +459,14 @@ class TradingBot:
             self._logger.error("reconciliation_failed", error=str(e))
             # Continue anyway - strategy will start fresh
 
+    @property
+    def _is_multi_symbol(self) -> bool:
+        """Prueft ob die Strategie Multi-Symbol ist (z.B. PredictionStrategy)."""
+        return (
+            hasattr(self._strategy, "symbols")
+            and self._strategy.symbol == "MULTI/USDT"
+        )
+
     async def _run_loop(self) -> None:
         """Main trading loop.
 
@@ -467,15 +476,30 @@ class TradingBot:
         3. Checks for order fills
         4. Saves state
         """
-        tick_interval = self.DEFAULT_TICK_INTERVAL
+        # Strategie kann eigenes Tick-Intervall definieren (z.B. 60s fuer Predictions)
+        tick_interval = getattr(
+            self._strategy, "tick_interval", self.DEFAULT_TICK_INTERVAL
+        )
 
         while self._running:
             try:
-                # Fetch current price
-                ticker = await self._exchange.fetch_ticker(self._strategy.symbol)
-
-                # Update strategy
-                await self._strategy.on_tick(ticker)
+                if self._is_multi_symbol:
+                    # Multi-Symbol: Strategie fetcht Preise selbst
+                    from crypto_bot.exchange.base_exchange import Ticker as TickerClass
+                    dummy_ticker = TickerClass(
+                        symbol="MULTI/USDT",
+                        bid=Decimal(0),
+                        ask=Decimal(0),
+                        last=Decimal(0),
+                        timestamp=datetime.now(timezone.utc),
+                    )
+                    await self._strategy.on_tick(dummy_ticker)
+                else:
+                    # Single-Symbol: Bot fetcht Ticker
+                    ticker = await self._exchange.fetch_ticker(
+                        self._strategy.symbol
+                    )
+                    await self._strategy.on_tick(ticker)
 
                 # Check for filled orders
                 await self._check_order_fills()
@@ -501,18 +525,33 @@ class TradingBot:
             return
 
         try:
-            open_orders = await self._exchange.fetch_open_orders(
-                self._strategy.symbol
-            )
+            if self._is_multi_symbol:
+                # Multi-Symbol: alle offenen Orders auf einmal abfragen
+                open_orders = await self._exchange.fetch_open_orders(None)
+            else:
+                open_orders = await self._exchange.fetch_open_orders(
+                    self._strategy.symbol
+                )
             open_order_ids = {o.id for o in open_orders}
 
             # Check tracked orders for fills
             if hasattr(self._strategy, "_active_orders"):
                 for order_id in list(self._strategy._active_orders.keys()):
                     if order_id not in open_order_ids:
+                        # Symbol fuer fetch_order bestimmen
+                        if self._is_multi_symbol:
+                            coin = self._strategy._active_orders.get(order_id)
+                            symbol = (
+                                f"{coin}/{self._strategy._config.quote_currency}"
+                                if isinstance(coin, str)
+                                else self._strategy.symbol
+                            )
+                        else:
+                            symbol = self._strategy.symbol
+
                         # Order no longer open - check if filled
                         order = await self._exchange.fetch_order(
-                            order_id, self._strategy.symbol
+                            order_id, symbol
                         )
                         if order.status == OrderStatus.CLOSED:
                             await self._strategy.on_order_filled(order)

@@ -20,6 +20,8 @@ from crypto_bot.config.logging_config import configure_logging, get_logger
 from crypto_bot.config.settings import AppSettings, get_settings
 from crypto_bot.data.persistence import Database
 from crypto_bot.exchange.binance_adapter import BinanceAdapter
+from crypto_bot.prediction.prediction_config import DEFAULT_PREDICTION_COINS, PredictionConfig
+from crypto_bot.prediction.prediction_strategy import PredictionStrategy
 from crypto_bot.strategies.grid_trading import GridConfig, GridTradingStrategy
 from crypto_bot.utils.health import HealthCheckServer
 
@@ -135,6 +137,13 @@ Configuration:
         type=str,
         default=None,
         help="Trading pair symbol (e.g., BTC/USDT)",
+    )
+
+    parser.add_argument(
+        "--strategy",
+        choices=["grid", "prediction"],
+        default="grid",
+        help="Trading strategy: grid (default) or prediction (7-day ML predictions)",
     )
 
     parser.add_argument(
@@ -333,6 +342,28 @@ def create_grid_strategy(settings: AppSettings) -> GridTradingStrategy:
     return GridTradingStrategy(config)
 
 
+def create_prediction_strategy(settings: AppSettings) -> PredictionStrategy:
+    """Create a prediction-based trading strategy.
+
+    Uses ML predictions from the coin_prediction project to trade
+    all 20 coins with confidence-based position sizing.
+
+    Args:
+        settings: Application settings.
+
+    Returns:
+        Configured PredictionStrategy.
+    """
+    config = PredictionConfig(
+        name="prediction",
+        symbol="MULTI/USDT",
+        coins=list(DEFAULT_PREDICTION_COINS),
+        total_capital=Decimal("1000"),
+        dry_run=settings.trading.dry_run,
+    )
+    return PredictionStrategy(config)
+
+
 # =============================================================================
 # Main Entry Point
 # =============================================================================
@@ -423,14 +454,17 @@ async def main() -> int:
         exchange = BinanceAdapter(settings.exchange)
         database = Database(settings.database)
 
-        # Check if running single or multi-pair mode
-        if args.symbol:
+        # Strategy-Auswahl
+        if args.strategy == "prediction":
+            strategy = create_prediction_strategy(settings)
+            strategies = [strategy]
+        elif args.symbol:
             # Single pair mode (backward compatible)
             settings.trading.symbol = args.symbol
             strategy = create_grid_strategy(settings)
             strategies = [strategy]
         else:
-            # Multi-pair mode
+            # Multi-pair grid mode
             strategies = create_grid_strategies(settings)
 
         logger.info(
