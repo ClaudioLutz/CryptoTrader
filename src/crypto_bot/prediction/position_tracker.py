@@ -33,6 +33,22 @@ class PredictionPosition:
     sell_order_id: Optional[str] = None
     close_price: Optional[Decimal] = None
     pnl: Optional[Decimal] = None
+    # SL/TP (ATR-basiert, berechnet bei Eroeffnung)
+    stop_loss_price: Optional[Decimal] = None
+    take_profit_price: Optional[Decimal] = None
+    close_reason: Optional[str] = None  # "time", "stop_loss", "take_profit"
+
+    def check_sl_tp(self, current_price: Decimal) -> Optional[str]:
+        """Prueft ob SL oder TP getriggert wurde.
+
+        Returns:
+            'stop_loss', 'take_profit' oder None.
+        """
+        if self.stop_loss_price and current_price <= self.stop_loss_price:
+            return "stop_loss"
+        if self.take_profit_price and current_price >= self.take_profit_price:
+            return "take_profit"
+        return None
 
     def to_dict(self) -> dict:
         return {
@@ -50,6 +66,9 @@ class PredictionPosition:
             "sell_order_id": self.sell_order_id,
             "close_price": str(self.close_price) if self.close_price else None,
             "pnl": str(self.pnl) if self.pnl else None,
+            "stop_loss_price": str(self.stop_loss_price) if self.stop_loss_price else None,
+            "take_profit_price": str(self.take_profit_price) if self.take_profit_price else None,
+            "close_reason": self.close_reason,
         }
 
     @classmethod
@@ -69,6 +88,9 @@ class PredictionPosition:
             sell_order_id=data.get("sell_order_id"),
             close_price=Decimal(data["close_price"]) if data.get("close_price") else None,
             pnl=Decimal(data["pnl"]) if data.get("pnl") else None,
+            stop_loss_price=Decimal(data["stop_loss_price"]) if data.get("stop_loss_price") else None,
+            take_profit_price=Decimal(data["take_profit_price"]) if data.get("take_profit_price") else None,
+            close_reason=data.get("close_reason"),
         )
 
 
@@ -104,17 +126,19 @@ class PositionTracker:
             self._positions[coin].sell_order_id = sell_order_id
             logger.info("position_closing", coin=coin, sell_order_id=sell_order_id)
 
-    def mark_closed(self, coin: str, close_price: Decimal) -> None:
+    def mark_closed(self, coin: str, close_price: Decimal, reason: str = "time") -> None:
         if coin not in self._positions:
             return
         pos = self._positions[coin]
         pos.status = "closed"
         pos.close_price = close_price
+        pos.close_reason = reason
         revenue = pos.amount * close_price
         pos.pnl = revenue - pos.cost
         logger.info(
             "position_closed",
             coin=coin,
+            reason=reason,
             entry_price=str(pos.entry_price),
             close_price=str(close_price),
             pnl=str(pos.pnl),

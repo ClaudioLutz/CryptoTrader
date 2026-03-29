@@ -104,18 +104,40 @@ class PredictionStrategy:
     async def on_tick(self, ticker: Ticker) -> None:
         """Wird alle 60 Sekunden aufgerufen.
 
-        1. Abgelaufene Positionen schliessen
-        2. Taegl. Retrain pruefen und ausfuehren
+        1. SL/TP pruefen (aktuellen Preis holen)
+        2. Abgelaufene Positionen schliessen (Zeitbarriere)
+        3. Taegl. Retrain pruefen und ausfuehren
         """
         if not self._initialized or not self._context:
             return
 
         now = datetime.now(timezone.utc)
 
-        # 1. Abgelaufene Positionen schliessen
+        # 1. SL/TP pruefen fuer alle offenen Positionen
+        for pos in self._tracker.get_open_positions():
+            if pos.status != "open":
+                continue
+            try:
+                current_price = await self._context.get_current_price(pos.symbol)
+                trigger = pos.check_sl_tp(current_price)
+                if trigger:
+                    logger.warning(
+                        "sl_tp_triggered",
+                        coin=pos.coin,
+                        trigger=trigger,
+                        entry_price=str(pos.entry_price),
+                        current_price=str(current_price),
+                        sl=str(pos.stop_loss_price),
+                        tp=str(pos.take_profit_price),
+                    )
+                    await self._close_position(pos, reason=trigger)
+            except Exception:
+                logger.exception("sl_tp_check_failed", coin=pos.coin)
+
+        # 2. Abgelaufene Positionen schliessen (Zeitbarriere)
         positions_to_close = self._tracker.get_positions_to_close(now)
         for pos in positions_to_close:
-            await self._close_position(pos)
+            await self._close_position(pos, reason="time")
 
         # 2. Taegl. Retrain
         if self._should_retrain(now) and not self._retraining:
@@ -134,11 +156,14 @@ class PredictionStrategy:
         coin = self._active_orders.pop(order.id)
 
         if order.side == OrderSide.SELL:
-            # Position geschlossen
+            # Position geschlossen — Reason aus Position holen
             close_price = order.price if order.price else (
                 order.cost / order.filled if order.filled > 0 else Decimal(0)
             )
-            self._tracker.mark_closed(coin, close_price)
+            # Reason wurde in _close_position auf der Position gesetzt
+            pos = self._tracker._positions.get(coin)
+            reason = pos.close_reason if pos and pos.close_reason else "time"
+            self._tracker.mark_closed(coin, close_price, reason=reason)
             logger.info(
                 "prediction_position_closed_by_fill",
                 coin=coin,
@@ -335,6 +360,10 @@ class PredictionStrategy:
                 )
 
                 now = datetime.now(timezone.utc)
+                # SL/TP berechnen (ATR-basiert aus Pipeline)
+                sl_price = (price * (1 - Decimal(str(pred.sl_pct)))).quantize(Decimal("0.00000001"))
+                tp_price = (price * (1 + Decimal(str(pred.tp_pct)))).quantize(Decimal("0.00000001"))
+
                 position = PredictionPosition(
                     coin=pred.coin,
                     symbol=symbol,
@@ -346,6 +375,8 @@ class PredictionStrategy:
                     buy_order_id=order_id,
                     opened_at=now,
                     close_at=now + timedelta(days=self._config.prediction_horizon_days),
+                    stop_loss_price=sl_price,
+                    take_profit_price=tp_price,
                 )
                 self._tracker.add_position(position)
                 self._active_orders[order_id] = pred.coin
@@ -358,6 +389,10 @@ class PredictionStrategy:
                     size_usdt=str(position_size),
                     amount=str(amount),
                     price=str(price),
+                    sl=str(sl_price),
+                    tp=str(tp_price),
+                    sl_pct=f"{pred.sl_pct:.1%}",
+                    tp_pct=f"{pred.tp_pct:.1%}",
                 )
 
             except Exception:
@@ -383,7 +418,7 @@ class PredictionStrategy:
         size = (max_per_coin * scale).quantize(Decimal("0.01"))
         return min(size, available)
 
-    async def _close_position(self, pos: PredictionPosition) -> None:
+    async def _close_position(self, pos: PredictionPosition, reason: str = "time") -> None:
         """Schliesst eine Position via Market Sell."""
         if not self._context:
             return
@@ -396,11 +431,12 @@ class PredictionStrategy:
             )
             self._tracker.mark_closing(pos.coin, order_id)
             self._active_orders[order_id] = pos.coin
+            pos.close_reason = reason
             logger.info(
                 "prediction_position_close_initiated",
                 coin=pos.coin,
+                reason=reason,
                 amount=str(pos.amount),
-                held_days=self._config.prediction_horizon_days,
             )
         except Exception:
             logger.exception("position_close_failed", coin=pos.coin)

@@ -10,7 +10,9 @@
       "cost": "24.97",
       "opened_at": "2026-03-28T20:25:00+00:00",
       "close_at": "2026-04-03T20:25:00+00:00",
-      "status": "open"
+      "status": "open",
+      "stop_loss_price": "0.28557",
+      "take_profit_price": "0.364895"
     },
     {
       "coin": "ANKR",
@@ -22,7 +24,9 @@
       "cost": "10.94",
       "opened_at": "2026-03-29T19:39:30+00:00",
       "close_at": "2026-04-05T19:39:30+00:00",
-      "status": "open"
+      "status": "open",
+      "stop_loss_price": "0.004509",
+      "take_profit_price": "0.0057615"
     },
     {
       "coin": "AAVE",
@@ -34,7 +38,9 @@
       "cost": "10.55",
       "opened_at": "2026-03-29T19:39:31+00:00",
       "close_at": "2026-04-05T19:39:31+00:00",
-      "status": "open"
+      "status": "open",
+      "stop_loss_price": "85.608",
+      "take_profit_price": "109.388"
     }
   ],
   "closed": []

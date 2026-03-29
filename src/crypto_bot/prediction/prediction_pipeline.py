@@ -30,6 +30,9 @@ class PredictionResult:
     probability: float  # Rohe Wahrscheinlichkeit fuer "Up"
     confidence: float  # |probability - 0.5| + 0.5
     features_date: str  # Datum der neuesten Feature-Zeile
+    atr_14d: float = 0.0  # ATR fuer SL/TP-Berechnung
+    sl_pct: float = 0.10  # Stop-Loss in % (Fallback 10%)
+    tp_pct: float = 0.15  # Take-Profit in % (Fallback 15%)
 
 
 class PredictionPipeline:
@@ -214,6 +217,17 @@ class PredictionPipeline:
 
         features_date = str(latest_features.index[0].date())
 
+        # ATR-14d berechnen fuer SL/TP
+        atr_14d = self._calculate_atr(ohlcv, period=14)
+        last_close = float(close.iloc[-1])
+        if last_close > 0 and atr_14d > 0:
+            # SL = 2.0x ATR, TP = 3.0x ATR (R:R = 1.5:1)
+            sl_pct = min((2.0 * atr_14d) / last_close, 0.20)  # Max 20%
+            tp_pct = min((3.0 * atr_14d) / last_close, 0.30)  # Max 30%
+        else:
+            sl_pct = 0.10  # Fallback
+            tp_pct = 0.15
+
         logger.info(
             "coin_predicted",
             coin=coin,
@@ -221,6 +235,9 @@ class PredictionPipeline:
             probability=round(probability, 4),
             confidence=round(confidence, 4),
             features_date=features_date,
+            atr_14d=round(atr_14d, 4),
+            sl_pct=round(sl_pct * 100, 1),
+            tp_pct=round(tp_pct * 100, 1),
         )
 
         return PredictionResult(
@@ -229,4 +246,27 @@ class PredictionPipeline:
             probability=probability,
             confidence=confidence,
             features_date=features_date,
+            atr_14d=atr_14d,
+            sl_pct=sl_pct,
+            tp_pct=tp_pct,
         )
+
+    @staticmethod
+    def _calculate_atr(ohlcv: "pd.DataFrame", period: int = 14) -> float:
+        """Berechnet den Average True Range (ATR)."""
+        import numpy as np
+
+        high = ohlcv["high"].astype(float)
+        low = ohlcv["low"].astype(float)
+        close = ohlcv["close"].astype(float)
+
+        # True Range = max(high-low, |high-prev_close|, |low-prev_close|)
+        prev_close = close.shift(1)
+        tr = np.maximum(
+            high - low,
+            np.maximum(abs(high - prev_close), abs(low - prev_close)),
+        )
+
+        # ATR = Gleitender Durchschnitt des True Range
+        atr = tr.rolling(window=period).mean()
+        return float(atr.iloc[-1]) if not np.isnan(atr.iloc[-1]) else 0.0

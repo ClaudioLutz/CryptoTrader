@@ -59,50 +59,79 @@ async def main() -> int:
     open_positions = [p for p in state["positions"] if p["status"] == "open"]
     closed_today = 0
 
+    async def _close_pos(pos: dict, reason: str, current_price: float) -> bool:
+        """Schliesst eine Position und aktualisiert den State."""
+        coin = pos["coin"]
+        amount = Decimal(pos["amount"])
+        symbol = f"{coin}/USDT"
+        cost = float(pos["cost"])
+
+        if not dry_run:
+            try:
+                from crypto_bot.exchange.base_exchange import OrderSide, OrderType
+                order = await exchange.create_order(
+                    symbol=symbol,
+                    order_type=OrderType.MARKET,
+                    side=OrderSide.SELL,
+                    amount=amount,
+                )
+                close_price = float(order.price or order.cost / order.filled)
+                revenue = float(order.filled) * close_price
+                pnl = revenue - cost
+
+                pos["status"] = "closed"
+                pos["close_price"] = str(close_price)
+                pos["pnl"] = str(round(pnl, 4))
+                pos["closed_at"] = now.isoformat()
+                pos["close_reason"] = reason
+                state["closed"].append(pos)
+
+                pnl_str = f"+${pnl:.2f}" if pnl >= 0 else f"-${abs(pnl):.2f}"
+                print(f"    GESCHLOSSEN ({reason}) @ ${close_price:.4f} — P/L: {pnl_str}")
+                return True
+            except Exception as e:
+                print(f"    FEHLER beim Schliessen: {e}")
+                return False
+        else:
+            pnl = float(amount) * current_price - cost
+            print(f"    DRY-RUN: Wuerde schliessen ({reason}) @ ${current_price:.4f} — P/L: ${pnl:+.2f}")
+            return True
+
     for pos in open_positions:
+        coin = pos["coin"]
+        symbol = f"{coin}/USDT"
         close_at = datetime.fromisoformat(pos["close_at"])
-        if now >= close_at:
-            coin = pos["coin"]
-            amount = Decimal(pos["amount"])
-            symbol = f"{coin}/USDT"
+        entry_price = float(pos["entry_price"])
+        sl_price = float(pos.get("stop_loss_price") or entry_price * 0.90)
+        tp_price = float(pos.get("take_profit_price") or entry_price * 1.15)
 
-            print(f"  UEBERFAELLIG: {coin} — {amount} seit {pos['opened_at'][:10]}")
-            print(f"    Faellig seit: {close_at.strftime('%Y-%m-%d %H:%M UTC')}")
+        # Aktuellen Preis holen
+        try:
+            ticker = await exchange.fetch_ticker(symbol)
+            current_price = float(ticker.last)
+        except Exception:
+            print(f"  {coin}: Preis nicht verfuegbar — uebersprungen")
+            continue
 
-            if not dry_run:
-                try:
-                    order = await exchange.create_order(
-                        symbol=symbol,
-                        order_type="market",
-                        side="sell",
-                        amount=amount,
-                    )
-                    close_price = float(order.price or order.cost / order.filled)
-                    revenue = float(order.filled) * close_price
-                    cost = float(pos["cost"])
-                    pnl = revenue - cost
+        pnl_pct = (current_price - entry_price) / entry_price * 100
 
-                    pos["status"] = "closed"
-                    pos["close_price"] = str(close_price)
-                    pos["pnl"] = str(round(pnl, 4))
-                    pos["closed_at"] = now.isoformat()
-                    state["closed"].append(pos)
-
-                    pnl_str = f"+${pnl:.2f}" if pnl >= 0 else f"-${abs(pnl):.2f}"
-                    print(f"    GESCHLOSSEN @ ${close_price:.4f} — P/L: {pnl_str}")
-                    closed_today += 1
-                except Exception as e:
-                    print(f"    FEHLER beim Schliessen: {e}")
-            else:
-                ticker = await exchange.fetch_ticker(symbol)
-                price = float(ticker.last)
-                pnl = float(amount) * price - float(pos["cost"])
-                print(f"    DRY-RUN: Wuerde schliessen @ ${price:.4f} — P/L: ${pnl:+.2f}")
+        # Pruefen: SL, TP oder Zeitbarriere
+        if current_price <= sl_price:
+            print(f"  STOP LOSS: {coin} @ ${current_price:.4f} (SL: ${sl_price:.4f}, Entry: ${entry_price:.4f}, {pnl_pct:+.1f}%)")
+            if await _close_pos(pos, "stop_loss", current_price):
+                closed_today += 1
+        elif current_price >= tp_price:
+            print(f"  TAKE PROFIT: {coin} @ ${current_price:.4f} (TP: ${tp_price:.4f}, Entry: ${entry_price:.4f}, {pnl_pct:+.1f}%)")
+            if await _close_pos(pos, "take_profit", current_price):
+                closed_today += 1
+        elif now >= close_at:
+            print(f"  ZEITBARRIERE: {coin} — {pos['amount']} seit {pos['opened_at'][:10]} ({pnl_pct:+.1f}%)")
+            if await _close_pos(pos, "time", current_price):
                 closed_today += 1
         else:
             days_left = (close_at - now).days
             hours_left = int((close_at - now).total_seconds() / 3600) % 24
-            print(f"  {pos['coin']}: offen — schliesst in {days_left}d {hours_left}h")
+            print(f"  {coin}: ${current_price:.4f} ({pnl_pct:+.1f}%) — SL: ${sl_price:.4f} / TP: ${tp_price:.4f} — schliesst in {days_left}d {hours_left}h")
 
     # Geschlossene aus open-Liste entfernen
     state["positions"] = [p for p in state["positions"] if p["status"] == "open"]
@@ -188,17 +217,24 @@ async def main() -> int:
         price = float(ticker.last)
         amount = size / price
 
+        # SL/TP berechnen (ATR-basiert aus Pipeline)
+        sl_price = price * (1 - pred.sl_pct)
+        tp_price = price * (1 + pred.tp_pct)
+
         if not dry_run:
             try:
+                from crypto_bot.exchange.base_exchange import OrderSide, OrderType
                 order = await exchange.create_order(
                     symbol=symbol,
-                    order_type="market",
-                    side="buy",
+                    order_type=OrderType.MARKET,
+                    side=OrderSide.BUY,
                     amount=Decimal(str(amount)).quantize(Decimal("0.00000001")),
                 )
                 actual_cost = float(order.cost)
                 actual_amount = float(order.filled)
                 actual_price = float(order.price or (order.cost / order.filled))
+                sl_price = actual_price * (1 - pred.sl_pct)
+                tp_price = actual_price * (1 + pred.tp_pct)
 
                 close_at = now + __import__("datetime").timedelta(days=7)
                 position = {
@@ -212,12 +248,15 @@ async def main() -> int:
                     "opened_at": now.isoformat(),
                     "close_at": close_at.isoformat(),
                     "status": "open",
+                    "stop_loss_price": str(round(sl_price, 8)),
+                    "take_profit_price": str(round(tp_price, 8)),
                 }
                 state["positions"].append(position)
                 available -= actual_cost
                 opened_today += 1
 
                 print(f"  GEKAUFT: {pred.coin} — {actual_amount:.4f} @ ${actual_price:.4f} = ${actual_cost:.2f} (conf={pred.confidence:.1%})")
+                print(f"    SL: ${sl_price:.4f} ({pred.sl_pct:.1%}) / TP: ${tp_price:.4f} ({pred.tp_pct:.1%})")
                 print(f"    Schliesst: {close_at.strftime('%Y-%m-%d %H:%M UTC')}")
             except Exception as e:
                 print(f"  FEHLER {pred.coin}: {e}")
