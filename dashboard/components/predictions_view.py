@@ -51,6 +51,9 @@ def _save_predictions_cache() -> None:
                     "atr_14d": r.atr_14d,
                     "sl_pct": r.sl_pct,
                     "tp_pct": r.tp_pct,
+                    "q10": getattr(r, "q10", 0.0),
+                    "q50": getattr(r, "q50", 0.0),
+                    "q90": getattr(r, "q90", 0.0),
                 }
                 for coin, r in results.items()
             },

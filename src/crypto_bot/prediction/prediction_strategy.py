@@ -476,19 +476,28 @@ class PredictionStrategy:
             confidence_scale = 0.25 + 0.75 * (confidence_above_min / confidence_range)
             confidence_scale = min(confidence_scale, 1.0)
 
-        # Faktor 2: ATR-basiert (erwartete Bewegungsgroesse)
-        # tp_pct ist der ATR-basierte Take-Profit in % — ein guter Proxy
-        # fuer die erwartete Bewegungsgroesse des Coins.
-        # Median-TP liegt bei ca. 15%, darunter → kleiner, darueber → groesser
-        median_tp = 0.15
-        if pred.tp_pct > 0:
-            atr_ratio = pred.tp_pct / median_tp
-            # Clamped auf [0.5, 1.5] um extreme Werte zu begrenzen
-            atr_scale = max(0.5, min(atr_ratio, 1.5))
-        else:
-            atr_scale = 1.0
+        # Faktor 2: Quantil-basiert oder ATR-Fallback
+        # Wenn Quantil-Daten verfuegbar: q50 (erwarteter Return) bestimmt Groesse
+        # Wenn q10 > 0: Selbst im schlechten Fall positiv → Bonus
+        if hasattr(pred, "q50") and pred.q50 != 0:
+            # Erwarteter Return: 0% → 0.5x, 5% → 1.0x, 10%+ → 1.5x
+            q50_scale = max(0.5, min(0.5 + pred.q50 * 10, 1.5))
 
-        combined_scale = Decimal(str(min(confidence_scale * atr_scale, 1.5)))
+            # Bonus wenn q10 > 0 (Downside-geschuetzt)
+            if hasattr(pred, "q10") and pred.q10 > 0:
+                q50_scale = min(q50_scale * 1.2, 1.5)
+
+            move_scale = q50_scale
+        else:
+            # Fallback: ATR-basiert
+            median_tp = 0.15
+            if pred.tp_pct > 0:
+                atr_ratio = pred.tp_pct / median_tp
+                move_scale = max(0.5, min(atr_ratio, 1.5))
+            else:
+                move_scale = 1.0
+
+        combined_scale = Decimal(str(min(confidence_scale * move_scale, 1.5)))
         size = (max_per_coin * combined_scale).quantize(Decimal("0.01"))
         return min(size, available)
 

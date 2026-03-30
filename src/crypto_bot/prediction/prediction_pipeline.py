@@ -33,6 +33,10 @@ class PredictionResult:
     atr_14d: float = 0.0  # ATR fuer SL/TP-Berechnung
     sl_pct: float = 0.10  # Stop-Loss in % (Fallback 10%)
     tp_pct: float = 0.15  # Take-Profit in % (Fallback 15%)
+    # Quantil-Regression Ergebnisse
+    q10: float = 0.0  # Pessimistischer Return (10. Perzentil)
+    q50: float = 0.0  # Erwarteter Return (Median)
+    q90: float = 0.0  # Optimistischer Return (90. Perzentil)
 
 
 class PredictionPipeline:
@@ -69,6 +73,11 @@ class PredictionPipeline:
         from src.ingestion.ohlcv_fetcher import fetch_all_coins
         from src.ingestion.sentiment_fetcher import fetch_fear_greed
         from src.models.lightgbm_model import predict_with_confidence, train_lightgbm
+        from src.models.quantile_model import (
+            create_return_target,
+            predict_quantiles,
+            train_quantile_models,
+        )
         from src.models.targets import create_target
         from src.utils.timeframe import days_to_periods
 
@@ -82,6 +91,9 @@ class PredictionPipeline:
         self._predict_with_confidence = predict_with_confidence
         self._create_target = create_target
         self._days_to_periods = days_to_periods
+        self._train_quantile_models = train_quantile_models
+        self._predict_quantiles = predict_quantiles
+        self._create_return_target = create_return_target
 
         self._modules_loaded = True
         logger.info("coin_prediction_modules_loaded", path=path_str)
@@ -230,6 +242,33 @@ class PredictionPipeline:
             sl_pct = 0.10  # Fallback
             tp_pct = 0.15
 
+        # Quantil-Regression: Rendite-Intervall vorhersagen
+        q10, q50, q90 = 0.0, 0.0, 0.0
+        try:
+            return_target = self._create_return_target(close, horizon_periods)
+            ret_common = X.index.intersection(return_target.dropna().index)
+            X_ret = X.loc[ret_common]
+            y_ret = return_target.loc[ret_common]
+
+            valid_ret = X_ret.notna().all(axis=1) & y_ret.notna()
+            X_ret = X_ret[valid_ret]
+            y_ret = y_ret[valid_ret]
+
+            if len(X_ret) >= 200:
+                ret_split = int(len(X_ret) * 0.8)
+                q_models = self._train_quantile_models(
+                    X_ret.iloc[:ret_split], y_ret.iloc[:ret_split],
+                    X_ret.iloc[ret_split:], y_ret.iloc[ret_split:],
+                    seed=seed,
+                )
+                q_preds = self._predict_quantiles(q_models, latest_features)
+                if q_preds:
+                    q10 = q_preds[0].q10
+                    q50 = q_preds[0].q50
+                    q90 = q_preds[0].q90
+        except Exception:
+            logger.warning("quantile_prediction_failed", coin=coin)
+
         logger.info(
             "coin_predicted",
             coin=coin,
@@ -240,6 +279,9 @@ class PredictionPipeline:
             atr_14d=round(atr_14d, 4),
             sl_pct=round(sl_pct * 100, 1),
             tp_pct=round(tp_pct * 100, 1),
+            q10=round(q10 * 100, 1),
+            q50=round(q50 * 100, 1),
+            q90=round(q90 * 100, 1),
         )
 
         return PredictionResult(
@@ -251,6 +293,9 @@ class PredictionPipeline:
             atr_14d=atr_14d,
             sl_pct=sl_pct,
             tp_pct=tp_pct,
+            q10=q10,
+            q50=q50,
+            q90=q90,
         )
 
     @staticmethod
