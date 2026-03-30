@@ -456,21 +456,40 @@ class PredictionStrategy:
     def _calculate_position_size(
         self, pred: PredictionResult, available: Decimal
     ) -> Decimal:
-        """Berechnet die Positionsgroesse basierend auf Confidence.
+        """Berechnet die Positionsgroesse basierend auf Confidence und ATR.
 
-        Mapped Confidence [min_confidence, 1.0] auf Allokation [25%, 100%] von max_per_coin.
+        Zwei Faktoren bestimmen die Groesse:
+        1. Confidence [min_confidence, 1.0] → [25%, 100%] (wie sicher ist das Signal?)
+        2. ATR-Faktor [0.5, 1.5] (wie gross ist die erwartete Bewegung?)
+
+        Coins mit hoher Confidence UND hoher Volatilitaet bekommen
+        groessere Positionen, weil das Gewinnpotenzial hoeher ist.
         """
         max_per_coin = self._config.total_capital * self._config.max_per_coin_pct
 
+        # Faktor 1: Confidence-basiert (wie bisher)
         confidence_range = 1.0 - self._config.min_confidence
         if confidence_range <= 0:
-            scale = Decimal("1")
+            confidence_scale = 1.0
         else:
             confidence_above_min = pred.confidence - self._config.min_confidence
-            raw_scale = 0.25 + 0.75 * (confidence_above_min / confidence_range)
-            scale = Decimal(str(min(raw_scale, 1.0)))
+            confidence_scale = 0.25 + 0.75 * (confidence_above_min / confidence_range)
+            confidence_scale = min(confidence_scale, 1.0)
 
-        size = (max_per_coin * scale).quantize(Decimal("0.01"))
+        # Faktor 2: ATR-basiert (erwartete Bewegungsgroesse)
+        # tp_pct ist der ATR-basierte Take-Profit in % — ein guter Proxy
+        # fuer die erwartete Bewegungsgroesse des Coins.
+        # Median-TP liegt bei ca. 15%, darunter → kleiner, darueber → groesser
+        median_tp = 0.15
+        if pred.tp_pct > 0:
+            atr_ratio = pred.tp_pct / median_tp
+            # Clamped auf [0.5, 1.5] um extreme Werte zu begrenzen
+            atr_scale = max(0.5, min(atr_ratio, 1.5))
+        else:
+            atr_scale = 1.0
+
+        combined_scale = Decimal(str(min(confidence_scale * atr_scale, 1.5)))
+        size = (max_per_coin * combined_scale).quantize(Decimal("0.01"))
         return min(size, available)
 
     async def _close_position(self, pos: PredictionPosition, reason: str = "time") -> None:

@@ -44,7 +44,7 @@ class PredictionConfig(StrategyConfig):
     total_capital: Decimal = Decimal("0")  # 0 = dynamisch aus USDT-Balance
     max_per_coin_pct: Decimal = Decimal("0.10")
     max_total_exposure_pct: Decimal = Decimal("0.60")
-    min_confidence: float = Field(default=0.55, ge=0.50, le=1.0)
+    min_confidence: float = Field(default=0.56, ge=0.50, le=1.0)
     retrain_hour_utc: int = Field(default=0, ge=0, le=23)
     retrain_minute_utc: int = Field(default=5, ge=0, le=59)
     prediction_horizon_days: int = Field(default=7, ge=1, le=30)

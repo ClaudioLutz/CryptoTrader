@@ -102,7 +102,7 @@ def _get_signal_label(confidence: float) -> tuple[str, str]:
     """
     if confidence >= 0.60:
         return "STARK", "#4caf50"
-    elif confidence >= 0.55:
+    elif confidence >= 0.56:
         return "MODERAT", "#ff9800"
     elif confidence >= 0.52:
         return "SCHWACH", "#f44336"
@@ -305,7 +305,7 @@ def _refresh_results_table(container: ui.column) -> None:
     # Zusammenfassung
     up_count = sum(1 for r in sorted_results if r.direction == "up")
     down_count = sum(1 for r in sorted_results if r.direction == "down")
-    strong_count = sum(1 for r in sorted_results if r.confidence >= 0.55)
+    strong_count = sum(1 for r in sorted_results if r.confidence >= 0.56)
 
     with container:
         # Summary Cards
@@ -324,7 +324,7 @@ def _refresh_results_table(container: ui.column) -> None:
 
             with ui.card().classes("prediction-summary-card"):
                 ui.label(str(strong_count)).classes("text-h4 text-warning")
-                ui.label("Handelbar (>55%)").classes("text-caption text-secondary")
+                ui.label("Handelbar (>56%)").classes("text-caption text-secondary")
 
         # Tabelle
         columns = [

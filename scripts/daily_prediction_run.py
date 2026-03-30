@@ -3,7 +3,7 @@
 Kann per Task Scheduler / Cron 1x taeglich ausgefuehrt werden.
 1. Ueberfaellige Positionen schliessen (Market Sell)
 2. Pipeline trainieren (38 Coins, ~3 Min)
-3. Neue Positionen oeffnen (Up + Confidence >= 55%)
+3. Neue Positionen oeffnen (Up + Confidence >= 56%)
 
 Usage:
     python scripts/daily_prediction_run.py
@@ -178,14 +178,14 @@ async def main() -> int:
     sorted_results = sorted(results.values(), key=lambda r: r.confidence, reverse=True)
 
     up_count = sum(1 for r in sorted_results if r.direction == "up")
-    tradeable = [r for r in sorted_results if r.direction == "up" and r.confidence >= 0.55]
+    tradeable = [r for r in sorted_results if r.direction == "up" and r.confidence >= 0.56]
 
     print(f"  {len(results)} Coins analysiert — {up_count} Up, {len(results) - up_count} Down")
     print(f"  Handelbar (Up + >=55%): {len(tradeable)}")
 
     for r in sorted_results[:10]:
-        signal = "STARK" if r.confidence >= 0.60 else "MODERAT" if r.confidence >= 0.55 else "SCHWACH"
-        mark = "*" if r.direction == "up" and r.confidence >= 0.55 else " "
+        signal = "STARK" if r.confidence >= 0.60 else "MODERAT" if r.confidence >= 0.56 else "SCHWACH"
+        mark = "*" if r.direction == "up" and r.confidence >= 0.56 else " "
         print(f"    {mark}{r.coin:<8} {r.direction:<6} {r.probability:.1%}  conf={r.confidence:.1%}  [{signal}]")
     if len(sorted_results) > 10:
         print(f"    ... und {len(sorted_results) - 10} weitere")
@@ -220,10 +220,16 @@ async def main() -> int:
             print(f"  Kein Budget mehr.")
             break
 
-        # Confidence-basierte Groesse
-        conf_range = 1.0 - 0.55
-        conf_above = pred.confidence - 0.55
-        scale = 0.25 + 0.75 * (conf_above / conf_range) if conf_range > 0 else 1.0
+        # Confidence + ATR-basierte Groesse
+        conf_range = 1.0 - 0.56
+        conf_above = pred.confidence - 0.56
+        conf_scale = 0.25 + 0.75 * (conf_above / conf_range) if conf_range > 0 else 1.0
+
+        # ATR-Faktor: Coins mit hoeherer Volatilitaet → groessere Position
+        median_tp = 0.15
+        atr_scale = max(0.5, min(pred.tp_pct / median_tp, 1.5)) if pred.tp_pct > 0 else 1.0
+
+        scale = min(conf_scale * atr_scale, 1.5)
         size = min(max_per_coin * scale, available)
 
         if size < 1:

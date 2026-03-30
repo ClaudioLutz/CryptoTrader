@@ -167,8 +167,10 @@ class PredictionPipeline:
         ohlcv = pd.read_parquet(ohlcv_path).set_index("timestamp").sort_index()
         close = ohlcv["close"]
 
-        # Target erstellen
-        target = self._create_target(close, horizon_periods)
+        # Target erstellen (Triple Barrier mit High/Low)
+        high = ohlcv["high"] if "high" in ohlcv.columns else None
+        low = ohlcv["low"] if "low" in ohlcv.columns else None
+        target = self._create_target(close, horizon_periods, high=high, low=low)
 
         # Align
         common_idx = features.index.intersection(target.dropna().index)
