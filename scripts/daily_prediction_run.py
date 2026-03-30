@@ -59,6 +59,19 @@ async def main() -> int:
     open_positions = [p for p in state["positions"] if p["status"] == "open"]
     closed_today = 0
 
+    async def _cancel_sl_tp(pos: dict) -> None:
+        """Cancelt bestehende Binance-Level SL/TP Orders."""
+        symbol = f"{pos['coin']}/USDT"
+        for key in ("sl_order_id", "tp_order_id"):
+            order_id = pos.get(key)
+            if order_id:
+                try:
+                    await exchange.cancel_order(order_id, symbol)
+                    print(f"    Binance-Order gecancelt: {key}={order_id}")
+                except Exception:
+                    pass  # Order evtl. schon ausgefuehrt/gecancelt
+                pos[key] = None
+
     async def _close_pos(pos: dict, reason: str, current_price: float) -> bool:
         """Schliesst eine Position und aktualisiert den State."""
         coin = pos["coin"]
@@ -69,6 +82,10 @@ async def main() -> int:
         if not dry_run:
             try:
                 from crypto_bot.exchange.base_exchange import OrderSide, OrderType
+
+                # Bestehende SL/TP Orders canceln
+                await _cancel_sl_tp(pos)
+
                 order = await exchange.create_order(
                     symbol=symbol,
                     order_type=OrderType.MARKET,
@@ -250,7 +267,25 @@ async def main() -> int:
                     "status": "open",
                     "stop_loss_price": str(round(sl_price, 8)),
                     "take_profit_price": str(round(tp_price, 8)),
+                    "sl_order_id": None,
+                    "tp_order_id": None,
                 }
+
+                # Binance-Level SL-Order platzieren (TP bleibt Bot-Level)
+                filled_amount = Decimal(str(actual_amount))
+                try:
+                    sl_order = await exchange.create_order(
+                        symbol=symbol,
+                        order_type=OrderType.MARKET,
+                        side=OrderSide.SELL,
+                        amount=filled_amount,
+                        params={"stopLossPrice": sl_price},
+                    )
+                    position["sl_order_id"] = sl_order.id
+                    print(f"    SL-Order platziert: {sl_order.id}")
+                except Exception as e:
+                    print(f"    SL-Order fehlgeschlagen (Bot-Fallback): {e}")
+
                 state["positions"].append(position)
                 available -= actual_cost
                 opened_today += 1

@@ -37,6 +37,9 @@ class PredictionPosition:
     stop_loss_price: Optional[Decimal] = None
     take_profit_price: Optional[Decimal] = None
     close_reason: Optional[str] = None  # "time", "stop_loss", "take_profit"
+    # Binance-Level SL/TP Order-IDs (None = Bot-Level SL/TP)
+    sl_order_id: Optional[str] = None
+    tp_order_id: Optional[str] = None
 
     def check_sl_tp(self, current_price: Decimal) -> Optional[str]:
         """Prueft ob SL oder TP getriggert wurde.
@@ -69,6 +72,8 @@ class PredictionPosition:
             "stop_loss_price": str(self.stop_loss_price) if self.stop_loss_price else None,
             "take_profit_price": str(self.take_profit_price) if self.take_profit_price else None,
             "close_reason": self.close_reason,
+            "sl_order_id": self.sl_order_id,
+            "tp_order_id": self.tp_order_id,
         }
 
     @classmethod
@@ -91,6 +96,8 @@ class PredictionPosition:
             stop_loss_price=Decimal(data["stop_loss_price"]) if data.get("stop_loss_price") else None,
             take_profit_price=Decimal(data["take_profit_price"]) if data.get("take_profit_price") else None,
             close_reason=data.get("close_reason"),
+            sl_order_id=data.get("sl_order_id"),
+            tp_order_id=data.get("tp_order_id"),
         )
 
 

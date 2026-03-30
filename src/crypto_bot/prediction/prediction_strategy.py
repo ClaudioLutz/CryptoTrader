@@ -93,6 +93,9 @@ class PredictionStrategy:
             # Aus State wiederhergestellt — nur abgelaufene Positionen pruefen
             logger.info("prediction_strategy_restored_from_state")
 
+        # Migration: bestehende Positionen ohne Binance-Level SL/TP nachrüsten
+        await self._migrate_positions_to_binance_sl_tp()
+
     async def _update_capital_from_balance(self) -> None:
         """Setzt total_capital dynamisch auf den aktuellen USDT-Bestand."""
         if not self._context:
@@ -104,7 +107,7 @@ class PredictionStrategy:
     async def on_tick(self, ticker: Ticker) -> None:
         """Wird alle 60 Sekunden aufgerufen.
 
-        1. SL/TP pruefen (aktuellen Preis holen)
+        1. SL/TP pruefen (Fallback fuer Positionen ohne Binance-Orders)
         2. Abgelaufene Positionen schliessen (Zeitbarriere)
         3. Taegl. Retrain pruefen und ausfuehren
         """
@@ -113,24 +116,36 @@ class PredictionStrategy:
 
         now = datetime.now(timezone.utc)
 
-        # 1. SL/TP pruefen fuer alle offenen Positionen
+        # 1. TP pruefen (Bot-Level) + SL-Fallback fuer Positionen ohne Binance-SL
+        #    SL wird auf Binance-Ebene geprueft (via SL-Order), TP bleibt Bot-Level
         for pos in self._tracker.get_open_positions():
             if pos.status != "open":
                 continue
             try:
                 current_price = await self._context.get_current_price(pos.symbol)
-                trigger = pos.check_sl_tp(current_price)
-                if trigger:
+
+                # TP immer Bot-Level pruefen (keine Binance-TP-Order)
+                if pos.take_profit_price and current_price >= pos.take_profit_price:
                     logger.warning(
-                        "sl_tp_triggered",
+                        "tp_triggered",
                         coin=pos.coin,
-                        trigger=trigger,
+                        entry_price=str(pos.entry_price),
+                        current_price=str(current_price),
+                        tp=str(pos.take_profit_price),
+                    )
+                    await self._close_position(pos, reason="take_profit")
+                    continue
+
+                # SL nur als Fallback wenn keine Binance-SL-Order existiert
+                if not pos.sl_order_id and pos.stop_loss_price and current_price <= pos.stop_loss_price:
+                    logger.warning(
+                        "sl_triggered_fallback",
+                        coin=pos.coin,
                         entry_price=str(pos.entry_price),
                         current_price=str(current_price),
                         sl=str(pos.stop_loss_price),
-                        tp=str(pos.take_profit_price),
                     )
-                    await self._close_position(pos, reason=trigger)
+                    await self._close_position(pos, reason="stop_loss")
             except Exception:
                 logger.exception("sl_tp_check_failed", coin=pos.coin)
 
@@ -139,7 +154,7 @@ class PredictionStrategy:
         for pos in positions_to_close:
             await self._close_position(pos, reason="time")
 
-        # 2. Taegl. Retrain
+        # 3. Taegl. Retrain
         if self._should_retrain(now) and not self._retraining:
             self._retraining = True
             try:
@@ -156,17 +171,24 @@ class PredictionStrategy:
         coin = self._active_orders.pop(order.id)
 
         if order.side == OrderSide.SELL:
-            # Position geschlossen — Reason aus Position holen
             close_price = order.price if order.price else (
                 order.cost / order.filled if order.filled > 0 else Decimal(0)
             )
-            # Reason wurde in _close_position auf der Position gesetzt
             pos = self._tracker._positions.get(coin)
-            reason = pos.close_reason if pos and pos.close_reason else "time"
+            if not pos:
+                return
+
+            # Bestimme Reason: war es die Binance-SL-Order?
+            if order.id == pos.sl_order_id:
+                reason = "stop_loss"
+            else:
+                reason = pos.close_reason if pos.close_reason else "time"
+
             self._tracker.mark_closed(coin, close_price, reason=reason)
             logger.info(
                 "prediction_position_closed_by_fill",
                 coin=coin,
+                reason=reason,
                 close_price=str(close_price),
                 filled=str(order.filled),
             )
@@ -271,6 +293,34 @@ class PredictionStrategy:
     # =========================================================================
     # Interne Methoden
     # =========================================================================
+
+    async def _migrate_positions_to_binance_sl_tp(self) -> None:
+        """Migriert bestehende Positionen ohne Binance-Level SL/TP.
+
+        Wird beim Start aufgerufen um sicherzustellen, dass alle offenen
+        Positionen durch Binance-Orders geschuetzt sind.
+        """
+        for pos in self._tracker.get_open_positions():
+            if pos.sl_order_id or pos.tp_order_id:
+                continue  # Bereits mit Binance-Orders
+            if not pos.stop_loss_price or not pos.take_profit_price:
+                continue  # Keine SL/TP-Preise definiert
+            try:
+                current_price = await self._context.get_current_price(pos.symbol)
+                # Preisregel: TP > current > SL
+                if pos.take_profit_price > current_price > pos.stop_loss_price:
+                    await self._place_sl_tp_orders(pos)
+                    logger.info("position_migrated_to_binance_sl_tp", coin=pos.coin)
+                else:
+                    logger.warning(
+                        "position_migration_skipped_price_rule",
+                        coin=pos.coin,
+                        current=str(current_price),
+                        sl=str(pos.stop_loss_price),
+                        tp=str(pos.take_profit_price),
+                    )
+            except Exception:
+                logger.warning("position_migration_failed", coin=pos.coin, exc_info=True)
 
     def _should_retrain(self, now: datetime) -> bool:
         """Prueft ob ein Retrain faellig ist (1x taegl. zur konfigurierten Zeit)."""
@@ -382,6 +432,9 @@ class PredictionStrategy:
                 self._active_orders[order_id] = pred.coin
                 available -= position_size
 
+                # Binance-Level SL/TP Orders platzieren
+                await self._place_sl_tp_orders(position)
+
                 logger.info(
                     "prediction_position_opened",
                     coin=pred.coin,
@@ -393,6 +446,8 @@ class PredictionStrategy:
                     tp=str(tp_price),
                     sl_pct=f"{pred.sl_pct:.1%}",
                     tp_pct=f"{pred.tp_pct:.1%}",
+                    sl_order=position.sl_order_id or "fallback",
+                    tp_order=position.tp_order_id or "fallback",
                 )
 
             except Exception:
@@ -419,11 +474,17 @@ class PredictionStrategy:
         return min(size, available)
 
     async def _close_position(self, pos: PredictionPosition, reason: str = "time") -> None:
-        """Schliesst eine Position via Market Sell."""
+        """Schliesst eine Position via Market Sell.
+
+        Cancelt zuerst bestehende Binance-Level SL/TP Orders.
+        """
         if not self._context:
             return
 
         try:
+            # Bestehende SL/TP Orders canceln (sonst blockieren sie die Menge)
+            await self._cancel_sl_tp_orders(pos)
+
             order_id = await self._context.place_order(
                 symbol=pos.symbol,
                 side="sell",
@@ -440,3 +501,46 @@ class PredictionStrategy:
             )
         except Exception:
             logger.exception("position_close_failed", coin=pos.coin)
+
+    async def _place_sl_tp_orders(self, pos: PredictionPosition) -> None:
+        """Platziert Stop-Loss Order auf Binance.
+
+        Nur SL wird auf Binance platziert (Schutz bei Bot-Ausfall).
+        TP bleibt Bot-Level — Binance erlaubt keine zwei Sell-Orders
+        fuer die gleiche Menge (InsufficientFunds), ausser via OCO.
+        Fallback auf Bot-Level SL/TP wenn die Platzierung fehlschlaegt.
+        """
+        if not self._context or not pos.stop_loss_price:
+            return
+
+        try:
+            sl_id = await self._context.place_order(
+                symbol=pos.symbol,
+                side="sell",
+                amount=pos.amount,
+                params={"stopLossPrice": float(pos.stop_loss_price)},
+            )
+            pos.sl_order_id = sl_id
+            self._active_orders[sl_id] = pos.coin
+            logger.info(
+                "binance_sl_order_placed",
+                coin=pos.coin,
+                order_id=sl_id,
+                stop_loss_price=str(pos.stop_loss_price),
+            )
+        except Exception:
+            logger.warning("binance_sl_order_failed_fallback_to_bot", coin=pos.coin, exc_info=True)
+
+    async def _cancel_sl_tp_orders(self, pos: PredictionPosition) -> None:
+        """Cancelt bestehende Binance-Level SL-Order fuer eine Position."""
+        if not self._context or not pos.sl_order_id:
+            return
+
+        try:
+            await self._context.cancel_order(pos.sl_order_id, pos.symbol)
+            self._active_orders.pop(pos.sl_order_id, None)
+            logger.info("binance_sl_cancelled", coin=pos.coin, order_id=pos.sl_order_id)
+        except Exception:
+            logger.warning("binance_sl_cancel_failed", coin=pos.coin, order_id=pos.sl_order_id, exc_info=True)
+
+        pos.sl_order_id = None

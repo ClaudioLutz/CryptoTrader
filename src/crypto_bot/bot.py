@@ -11,7 +11,7 @@ Coordinates all components:
 import asyncio
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Optional
 
 import structlog
 
@@ -84,6 +84,7 @@ class LiveExecutionContext:
         side: str,
         amount: Decimal,
         price: Optional[Decimal] = None,
+        params: Optional[dict[str, Any]] = None,
     ) -> str:
         """Place an order on the exchange.
 
@@ -92,6 +93,7 @@ class LiveExecutionContext:
             side: "buy" or "sell".
             amount: Order quantity.
             price: Limit price (None for market order).
+            params: Extra exchange-specific parameters (e.g. stopLossPrice, takeProfitPrice).
 
         Returns:
             Exchange-assigned order ID.
@@ -104,6 +106,7 @@ class LiveExecutionContext:
             side=OrderSide(side),
             amount=amount,
             price=price,
+            params=params,
         )
 
         # Persist order to database
@@ -227,6 +230,7 @@ class DryRunExecutionContext:
         side: str,
         amount: Decimal,
         price: Optional[Decimal] = None,
+        params: Optional[dict[str, Any]] = None,
     ) -> str:
         """Simulate placing an order.
 
@@ -235,6 +239,7 @@ class DryRunExecutionContext:
             side: "buy" or "sell".
             amount: Order quantity.
             price: Limit price.
+            params: Extra exchange-specific parameters (ignored in dry-run).
 
         Returns:
             Simulated order ID.

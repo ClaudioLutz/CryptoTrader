@@ -171,6 +171,7 @@ class CCXTExchange(BaseExchange):
         side: OrderSide,
         amount: Decimal,
         price: Decimal | None = None,
+        params: dict[str, Any] | None = None,
     ) -> Order:
         """Place a new order."""
         # Validate and adjust order parameters
@@ -185,6 +186,7 @@ class CCXTExchange(BaseExchange):
                 side=side.value,
                 amount=float(adjusted_amount),
                 price=float(adjusted_price) if adjusted_price else None,
+                params=params or {},
             )
 
             order = self._convert_order(raw)
@@ -400,12 +402,18 @@ class CCXTExchange(BaseExchange):
 
     def _convert_order(self, raw: dict[str, Any]) -> Order:
         """Convert CCXT order response to Order dataclass."""
+        try:
+            order_type = OrderType(raw["type"])
+        except ValueError:
+            # Binance gibt z.B. "stop_loss", "take_profit" zurueck
+            order_type = OrderType.MARKET
+
         return Order(
             id=raw["id"],
             client_order_id=raw.get("clientOrderId"),
             symbol=raw["symbol"],
             side=OrderSide(raw["side"]),
-            order_type=OrderType(raw["type"]),
+            order_type=order_type,
             status=self._convert_order_status(raw["status"]),
             price=Decimal(str(raw["price"])) if raw.get("price") else None,
             amount=Decimal(str(raw["amount"])),

@@ -46,6 +46,7 @@ class ExecutionContext(Protocol):
         side: str,
         amount: Decimal,
         price: Optional[Decimal] = None,
+        params: Optional[dict[str, Any]] = None,
     ) -> str:
         """Place an order.
 
@@ -54,6 +55,7 @@ class ExecutionContext(Protocol):
             side: "buy" or "sell".
             amount: Order quantity in base currency.
             price: Limit price (None for market order).
+            params: Extra exchange-specific parameters (e.g. stopLossPrice, takeProfitPrice).
 
         Returns:
             The order ID assigned by the exchange.

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
+from typing import Any
 
 
 class OrderSide(str, Enum):
@@ -19,6 +20,10 @@ class OrderType(str, Enum):
 
     MARKET = "market"
     LIMIT = "limit"
+    STOP_LOSS = "stop_loss"
+    STOP_LOSS_LIMIT = "stop_loss_limit"
+    TAKE_PROFIT = "take_profit"
+    TAKE_PROFIT_LIMIT = "take_profit_limit"
 
 
 class OrderStatus(str, Enum):
@@ -191,6 +196,7 @@ class BaseExchange(ABC):
         side: OrderSide,
         amount: Decimal,
         price: Decimal | None = None,
+        params: dict[str, Any] | None = None,
     ) -> Order:
         """Place a new order.
 
@@ -200,6 +206,7 @@ class BaseExchange(ABC):
             side: BUY or SELL.
             amount: Order quantity in base currency.
             price: Limit price (required for LIMIT orders).
+            params: Extra exchange-specific parameters (e.g. stopLossPrice, takeProfitPrice).
 
         Returns:
             The created Order object.

@@ -88,6 +88,7 @@ class BinanceAdapter(CCXTExchange):
         side: OrderSide,
         amount: Decimal,
         price: Decimal | None = None,
+        params: dict[str, Any] | None = None,
     ) -> Order:
         """Place order with Binance-specific validation.
 
@@ -104,6 +105,7 @@ class BinanceAdapter(CCXTExchange):
             side=side,
             amount=validated_amount,
             price=validated_price,
+            params=params,
         )
 
     def validate_order_params(
