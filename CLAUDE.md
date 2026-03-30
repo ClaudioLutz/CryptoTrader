@@ -77,7 +77,7 @@ gcloud compute ssh cryptotrader-vm --zone=europe-west4-a --project=cryptotrader-
 | Logs (VM) | `/home/cryptotrader/logs/` |
 | P&L Method | FIFO (First-In-First-Out) |
 
-## Always Search the web for relevant information (it mostly is useful)
+## Always Search the web for relevant information (YOU THINK YOU KNOW SOMETHING, BUT YOU DONT!)
 
 ## Change Documentation (required)
 
