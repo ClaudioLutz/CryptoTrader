@@ -178,14 +178,14 @@ async def main() -> int:
     sorted_results = sorted(results.values(), key=lambda r: r.confidence, reverse=True)
 
     up_count = sum(1 for r in sorted_results if r.direction == "up")
-    tradeable = [r for r in sorted_results if r.direction == "up" and r.confidence >= 0.56]
+    tradeable = [r for r in sorted_results if r.direction == "up" and r.confidence >= 0.65]
 
     print(f"  {len(results)} Coins analysiert — {up_count} Up, {len(results) - up_count} Down")
     print(f"  Handelbar (Up + >=55%): {len(tradeable)}")
 
     for r in sorted_results[:10]:
-        signal = "STARK" if r.confidence >= 0.60 else "MODERAT" if r.confidence >= 0.56 else "SCHWACH"
-        mark = "*" if r.direction == "up" and r.confidence >= 0.56 else " "
+        signal = "STARK" if r.confidence >= 0.60 else "MODERAT" if r.confidence >= 0.65 else "SCHWACH"
+        mark = "*" if r.direction == "up" and r.confidence >= 0.65 else " "
         print(f"    {mark}{r.coin:<8} {r.direction:<6} {r.probability:.1%}  conf={r.confidence:.1%}  [{signal}]")
     if len(sorted_results) > 10:
         print(f"    ... und {len(sorted_results) - 10} weitere")
@@ -221,8 +221,8 @@ async def main() -> int:
             break
 
         # Confidence + ATR-basierte Groesse
-        conf_range = 1.0 - 0.56
-        conf_above = pred.confidence - 0.56
+        conf_range = 1.0 - 0.65
+        conf_above = pred.confidence - 0.65
         conf_scale = 0.25 + 0.75 * (conf_above / conf_range) if conf_range > 0 else 1.0
 
         # ATR-Faktor: Coins mit hoeherer Volatilitaet → groessere Position

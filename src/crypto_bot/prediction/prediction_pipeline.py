@@ -213,6 +213,13 @@ class PredictionPipeline:
             for col in latest_features.columns[latest_features.isna().iloc[0]]:
                 latest_features[col] = X[col].median()
 
+        # Rollierendes Trainings-Fenster: nur die letzten 500 Tage verwenden
+        # Aeltere Daten stammen aus anderen Markt-Regimes und verwassern das Modell
+        max_train_days = 500
+        if len(X) > max_train_days:
+            X = X.iloc[-max_train_days:]
+            y = y.iloc[-max_train_days:]
+
         # Train/Val Split fuer Early Stopping (80/20)
         split_idx = int(len(X) * 0.8)
         X_train = X.iloc[:split_idx]

@@ -105,7 +105,7 @@ def _get_signal_label(confidence: float) -> tuple[str, str]:
     """
     if confidence >= 0.60:
         return "STARK", "#4caf50"
-    elif confidence >= 0.56:
+    elif confidence >= 0.65:
         return "MODERAT", "#ff9800"
     elif confidence >= 0.52:
         return "SCHWACH", "#f44336"
@@ -308,7 +308,7 @@ def _refresh_results_table(container: ui.column) -> None:
     # Zusammenfassung
     up_count = sum(1 for r in sorted_results if r.direction == "up")
     down_count = sum(1 for r in sorted_results if r.direction == "down")
-    strong_count = sum(1 for r in sorted_results if r.confidence >= 0.56)
+    strong_count = sum(1 for r in sorted_results if r.confidence >= 0.65)
 
     with container:
         # Summary Cards
@@ -327,7 +327,7 @@ def _refresh_results_table(container: ui.column) -> None:
 
             with ui.card().classes("prediction-summary-card"):
                 ui.label(str(strong_count)).classes("text-h4 text-warning")
-                ui.label("Handelbar (>56%)").classes("text-caption text-secondary")
+                ui.label("Handelbar (>65%)").classes("text-caption text-secondary")
 
         # Tabelle
         columns = [
@@ -335,6 +335,8 @@ def _refresh_results_table(container: ui.column) -> None:
             {"name": "direction", "label": "Richtung", "field": "direction", "align": "center", "sortable": True},
             {"name": "probability", "label": "Wahrsch.", "field": "probability", "align": "center", "sortable": True},
             {"name": "confidence", "label": "Confidence", "field": "confidence", "align": "center", "sortable": True},
+            {"name": "q50", "label": "Erw. Return", "field": "q50", "align": "center", "sortable": True},
+            {"name": "q_range", "label": "Intervall", "field": "q_range", "align": "center"},
             {"name": "signal", "label": "Signal", "field": "signal", "align": "center", "sortable": True},
             {"name": "date", "label": "Daten bis", "field": "date", "align": "center"},
         ]
@@ -343,11 +345,16 @@ def _refresh_results_table(container: ui.column) -> None:
         for r in sorted_results:
             signal_label, signal_color = _get_signal_label(r.confidence)
             dir_text, _, dir_color = _get_direction_display(r.direction)
+            q10 = getattr(r, "q10", 0.0) or 0.0
+            q50 = getattr(r, "q50", 0.0) or 0.0
+            q90 = getattr(r, "q90", 0.0) or 0.0
             rows.append({
                 "coin": r.coin,
                 "direction": dir_text,
                 "probability": f"{r.probability:.1%}",
                 "confidence": f"{r.confidence:.1%}",
+                "q50": f"{q50:+.1%}" if q50 != 0 else "-",
+                "q_range": f"{q10:+.1%} / {q90:+.1%}" if q10 != 0 or q90 != 0 else "-",
                 "signal": signal_label,
                 "date": r.features_date,
             })
@@ -423,6 +430,43 @@ def _refresh_results_table(container: ui.column) -> None:
                             "displayModeBar": False,
                             "responsive": True,
                         }
+
+                        # Quantil-Info anzeigen wenn verfuegbar
+                        pred = results.get(coin)
+                        if pred:
+                            q10 = getattr(pred, "q10", 0.0) or 0.0
+                            q50 = getattr(pred, "q50", 0.0) or 0.0
+                            q90 = getattr(pred, "q90", 0.0) or 0.0
+                            has_quantiles = q10 != 0 or q50 != 0 or q90 != 0
+
+                            with ui.row().classes("w-full gap-4 mt-3 justify-center"):
+                                # Prediction-Info
+                                dir_text, _, dir_color = _get_direction_display(pred.direction)
+                                signal_label, _ = _get_signal_label(pred.confidence)
+                                with ui.card().classes("prediction-info-card"):
+                                    ui.label("Prediction").classes("text-caption text-secondary")
+                                    ui.label(f"{dir_text} ({pred.confidence:.1%})").style(f"color: {dir_color}; font-weight: 600; font-size: 1.1em")
+                                    ui.label(signal_label).classes("text-caption")
+
+                                if has_quantiles:
+                                    with ui.card().classes("prediction-info-card"):
+                                        ui.label("Pessimistisch (Q10)").classes("text-caption text-secondary")
+                                        q10_color = "#4caf50" if q10 > 0 else "#f44336"
+                                        ui.label(f"{q10:+.1%}").style(f"color: {q10_color}; font-weight: 600; font-size: 1.1em")
+
+                                    with ui.card().classes("prediction-info-card"):
+                                        ui.label("Erwartet (Median)").classes("text-caption text-secondary")
+                                        q50_color = "#4caf50" if q50 > 0 else "#f44336"
+                                        ui.label(f"{q50:+.1%}").style(f"color: {q50_color}; font-weight: 600; font-size: 1.1em")
+
+                                    with ui.card().classes("prediction-info-card"):
+                                        ui.label("Optimistisch (Q90)").classes("text-caption text-secondary")
+                                        q90_color = "#4caf50" if q90 > 0 else "#f44336"
+                                        ui.label(f"{q90:+.1%}").style(f"color: {q90_color}; font-weight: 600; font-size: 1.1em")
+
+                                with ui.card().classes("prediction-info-card"):
+                                    ui.label("SL / TP").classes("text-caption text-secondary")
+                                    ui.label(f"-{pred.sl_pct:.1%} / +{pred.tp_pct:.1%}").classes("text-body1")
             except Exception as exc:
                 logger.exception("Fehler im rowClick-Handler: %s", exc)
 
@@ -436,6 +480,30 @@ def _refresh_results_table(container: ui.column) -> None:
                 <q-badge :color="props.value === 'Up' ? 'positive' : 'negative'">
                     {{ props.value }}
                 </q-badge>
+            </q-td>
+            """,
+        )
+
+        table.add_slot(
+            "body-cell-q50",
+            """
+            <q-td :props="props">
+                <span :style="props.value === '-' ? 'color: #9e9e9e' :
+                              props.value.includes('-') ? 'color: #f44336' : 'color: #4caf50'"
+                      style="font-weight: 600">
+                    {{ props.value }}
+                </span>
+            </q-td>
+            """,
+        )
+
+        table.add_slot(
+            "body-cell-q_range",
+            """
+            <q-td :props="props">
+                <span style="color: #9e9e9e; font-size: 0.85em">
+                    {{ props.value }}
+                </span>
             </q-td>
             """,
         )
@@ -698,5 +766,12 @@ def create_predictions_view() -> None:
         }
         .prediction-chart-dialog .q-dialog__inner {
             padding: 16px;
+        }
+        .prediction-info-card {
+            text-align: center;
+            padding: 8px 16px;
+            min-width: 100px;
+            background: rgba(26, 26, 46, 0.8) !important;
+            border: 1px solid #0f3460;
         }
     """)
