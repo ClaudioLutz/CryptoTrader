@@ -5,14 +5,20 @@ ermoeglicht das Starten des Trainings direkt aus dem Dashboard.
 """
 
 import asyncio
+import json
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Optional
+from pathlib import Path
+from typing import Any, Optional
 
+import plotly.graph_objects as go
 from nicegui import ui
 
 logger = logging.getLogger(__name__)
+
+# Persistenz-Datei fuer Predictions
+_PREDICTIONS_CACHE_FILE = Path(__file__).parent.parent.parent / "data" / "prediction_cache.json"
 
 # Globaler State fuer Predictions
 _prediction_state = {
@@ -22,6 +28,70 @@ _prediction_state = {
     "last_train_duration": None,  # seconds
     "error": None,  # str
 }
+
+
+def _save_predictions_cache() -> None:
+    """Speichert Prediction-Ergebnisse als JSON-Cache."""
+    try:
+        results = _prediction_state["results"]
+        if not results:
+            return
+
+        cache = {
+            "last_train_time": _prediction_state["last_train_time"].isoformat()
+                if _prediction_state["last_train_time"] else None,
+            "last_train_duration": _prediction_state["last_train_duration"],
+            "predictions": {
+                coin: {
+                    "coin": r.coin,
+                    "direction": r.direction,
+                    "probability": r.probability,
+                    "confidence": r.confidence,
+                    "features_date": r.features_date,
+                    "atr_14d": r.atr_14d,
+                    "sl_pct": r.sl_pct,
+                    "tp_pct": r.tp_pct,
+                }
+                for coin, r in results.items()
+            },
+        }
+
+        _PREDICTIONS_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _PREDICTIONS_CACHE_FILE.write_text(json.dumps(cache, indent=2), encoding="utf-8")
+        logger.info("Predictions-Cache gespeichert: %d Coins", len(results))
+    except Exception as e:
+        logger.warning("Predictions-Cache speichern fehlgeschlagen: %s", e)
+
+
+def _load_predictions_cache() -> None:
+    """Laedt gecachte Prediction-Ergebnisse beim Start."""
+    try:
+        if not _PREDICTIONS_CACHE_FILE.exists():
+            return
+
+        cache = json.loads(_PREDICTIONS_CACHE_FILE.read_text(encoding="utf-8"))
+
+        from crypto_bot.prediction.prediction_pipeline import PredictionResult
+
+        results = {}
+        for coin, data in cache.get("predictions", {}).items():
+            results[coin] = PredictionResult(**data)
+
+        _prediction_state["results"] = results
+
+        if cache.get("last_train_time"):
+            _prediction_state["last_train_time"] = datetime.fromisoformat(
+                cache["last_train_time"]
+            )
+        _prediction_state["last_train_duration"] = cache.get("last_train_duration")
+
+        logger.info("Predictions-Cache geladen: %d Coins", len(results))
+    except Exception as e:
+        logger.warning("Predictions-Cache laden fehlgeschlagen: %s", e)
+
+
+# Cache beim Import laden
+_load_predictions_cache()
 
 
 def _get_signal_label(confidence: float) -> tuple[str, str]:
@@ -94,6 +164,9 @@ async def _run_training(
         status_label.classes(replace="text-positive prediction-status")
         logger.info("Training completed: %d coins in %.0fs", len(results), duration)
 
+        # Cache speichern fuer Dashboard-Neustarts
+        _save_predictions_cache()
+
         # Tabelle aktualisieren
         _refresh_results_table(results_container)
 
@@ -107,6 +180,110 @@ async def _run_training(
         _prediction_state["is_training"] = False
         train_button.enable()
         spinner.set_visibility(False)
+
+
+async def _fetch_coin_ohlcv(coin: str, timeframe: str = "1d", limit: int = 90) -> list[dict[str, Any]]:
+    """Holt historische OHLCV-Daten fuer einen Coin von Binance.
+
+    Args:
+        coin: Coin-Symbol (z.B. "BTC").
+        timeframe: Kerzen-Zeitrahmen (z.B. "1d", "4h").
+        limit: Anzahl Kerzen.
+
+    Returns:
+        Liste von OHLCV-Dicts mit timestamp, open, high, low, close, volume.
+    """
+    try:
+        from crypto_bot.config.settings import get_settings
+        from crypto_bot.exchange.binance_adapter import BinanceAdapter
+
+        settings = get_settings()
+        exchange = BinanceAdapter(settings.exchange)
+        await exchange.connect()
+
+        symbol = f"{coin}/USDT"
+        ohlcv_data = await exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
+        await exchange.disconnect()
+
+        return [
+            {
+                "timestamp": candle.timestamp,
+                "open": float(candle.open),
+                "high": float(candle.high),
+                "low": float(candle.low),
+                "close": float(candle.close),
+                "volume": float(candle.volume),
+            }
+            for candle in ohlcv_data
+        ]
+    except Exception as e:
+        logger.warning("OHLCV-Daten fuer %s nicht verfuegbar: %s", coin, e)
+        return []
+
+
+def _create_coin_chart(ohlcv_data: list[dict[str, Any]], coin: str) -> go.Figure:
+    """Erstellt ein Plotly-Candlestick-Chart fuer einen Coin.
+
+    Args:
+        ohlcv_data: OHLCV-Daten.
+        coin: Coin-Name fuer den Titel.
+
+    Returns:
+        Plotly Figure.
+    """
+    fig = go.Figure()
+
+    timestamps = [d["timestamp"] for d in ohlcv_data]
+    opens = [d["open"] for d in ohlcv_data]
+    highs = [d["high"] for d in ohlcv_data]
+    lows = [d["low"] for d in ohlcv_data]
+    closes = [d["close"] for d in ohlcv_data]
+
+    fig.add_trace(go.Candlestick(
+        x=timestamps,
+        open=opens,
+        high=highs,
+        low=lows,
+        close=closes,
+        name=coin,
+        increasing=dict(line=dict(color="#00c853"), fillcolor="#00c853"),
+        decreasing=dict(line=dict(color="#ff5252"), fillcolor="#ff5252"),
+    ))
+
+    fig.update_layout(
+        title=dict(
+            text=f"{coin}/USDT — 90 Tage",
+            font=dict(color="#e8e8e8", size=14),
+            x=0.02,
+        ),
+        template="plotly_dark",
+        paper_bgcolor="#1a1a2e",
+        plot_bgcolor="#1a1a2e",
+        height=700,
+        margin=dict(l=50, r=20, t=40, b=30),
+        xaxis=dict(
+            gridcolor="#0f3460",
+            showgrid=True,
+            tickfont=dict(color="#a0a0a0"),
+            rangeslider=dict(visible=False),
+        ),
+        yaxis=dict(
+            title=dict(text="Preis ($)", font=dict(color="#a0a0a0", size=11)),
+            gridcolor="#0f3460",
+            showgrid=True,
+            tickfont=dict(color="#a0a0a0"),
+        ),
+        hovermode="x unified",
+        hoverlabel=dict(
+            bgcolor="#16213e",
+            bordercolor="#0f3460",
+            font=dict(family="Roboto Mono, monospace", size=11, color="#e8e8e8"),
+        ),
+        dragmode="pan",
+        showlegend=False,
+    )
+
+    return fig
 
 
 def _refresh_results_table(container: ui.column) -> None:
@@ -177,6 +354,76 @@ def _refresh_results_table(container: ui.column) -> None:
             rows=rows,
             row_key="coin",
         ).classes("predictions-table w-full")
+
+        # Chart-Dialog (modal, maximiert) mit Content-Container darin
+        chart_dialog = ui.dialog().classes("prediction-chart-dialog").props("full-width")
+        with chart_dialog:
+            chart_dialog_content = ui.column().classes("w-full")
+
+        # Row-Click-Handler: Chart im Dialog anzeigen
+        async def on_row_click(e) -> None:
+            """Laedt OHLCV-Daten und zeigt Chart-Dialog fuer den angeklickten Coin."""
+            try:
+                args = e.args
+                if isinstance(args, list) and len(args) >= 2:
+                    row = args[1]
+                elif isinstance(args, dict):
+                    row = args
+                else:
+                    return
+
+                coin = row.get("coin") if isinstance(row, dict) else None
+                if not coin:
+                    return
+
+                # Dialog oeffnen mit Loading
+                chart_dialog_content.clear()
+                with chart_dialog_content:
+                    with ui.card().classes("prediction-chart-card").style("width: 100%; max-width: 1200px;"):
+                        with ui.row().classes("w-full items-center justify-between mb-2"):
+                            ui.label(f"{coin}/USDT — Preisverlauf").classes("text-subtitle1 text-primary")
+                            ui.button(
+                                icon="close", color="grey-8",
+                                on_click=chart_dialog.close,
+                            ).props("flat dense round size=sm")
+                        with ui.row().classes("items-center gap-2 p-8 justify-center"):
+                            ui.spinner("dots", size="lg")
+                            ui.label("Chart wird geladen...").classes("text-secondary")
+
+                chart_dialog.open()
+
+                # Daten asynchron laden
+                ohlcv = await _fetch_coin_ohlcv(coin, timeframe="1d", limit=90)
+
+                # Dialog-Inhalt mit Chart ersetzen
+                chart_dialog_content.clear()
+                with chart_dialog_content:
+                    with ui.card().classes("prediction-chart-card").style("width: 100%; max-width: 1200px;"):
+                        with ui.row().classes("w-full items-center justify-between mb-2"):
+                            ui.label(f"{coin}/USDT — Preisverlauf").classes("text-subtitle1 text-primary")
+                            ui.button(
+                                icon="close", color="grey-8",
+                                on_click=chart_dialog.close,
+                            ).props("flat dense round size=sm")
+
+                        if not ohlcv:
+                            ui.label(f"Keine Chartdaten fuer {coin} verfuegbar.").classes(
+                                "text-negative p-4"
+                            )
+                            return
+
+                        fig = _create_coin_chart(ohlcv, coin)
+                        plotly_chart = ui.plotly(fig).classes("w-full")
+                        plotly_chart._props["config"] = {
+                            "scrollZoom": True,
+                            "doubleClick": "reset",
+                            "displayModeBar": False,
+                            "responsive": True,
+                        }
+            except Exception as exc:
+                logger.exception("Fehler im rowClick-Handler: %s", exc)
+
+        table.on("rowClick", on_row_click)
 
         # Custom cell styling via slots
         table.add_slot(
@@ -324,7 +571,7 @@ async def _refresh_positions(container: ui.column) -> None:
             "body-cell-pnl_display",
             """
             <q-td :props="props">
-                <span :style="props.value.startsWith('+') ? 'color: #4caf50' : 'color: #f44336'">
+                <span :style="props.value.includes('-') ? 'color: #f44336' : 'color: #4caf50'">
                     {{ props.value }}
                 </span>
             </q-td>
@@ -434,5 +681,19 @@ def create_predictions_view() -> None:
         }
         .positions-table tbody tr td {
             color: var(--text-primary, #fff);
+        }
+        .predictions-table tbody tr {
+            cursor: pointer;
+        }
+        .predictions-table tbody tr:hover td {
+            background: rgba(74, 158, 255, 0.08) !important;
+        }
+        .prediction-chart-card {
+            background: var(--bg-secondary, #1e1e1e) !important;
+            border: 1px solid #0f3460;
+            padding: 12px;
+        }
+        .prediction-chart-dialog .q-dialog__inner {
+            padding: 16px;
         }
     """)
