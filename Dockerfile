@@ -76,14 +76,12 @@ RUN mkdir -p /app/logs /app/data && \
 # Switch to non-root user
 USER appuser
 
-# Expose ports
-# 8080 - Bot health check API
-# 8081 - Dashboard web UI
-EXPOSE 8080 8081
+# Expose bot API port (Dashboard laeuft lokal, nicht im Container)
+EXPOSE 8080
 
 # Health check for container orchestration
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8080/health || exit 1
+    CMD curl -f http://localhost:${HEALTH__PORT:-8080}/health || exit 1
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
-CMD ["all"]
+CMD ["bot"]

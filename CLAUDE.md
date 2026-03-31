@@ -3,27 +3,34 @@
 ## CRITICAL: Production Bot
 
 This bot runs with **REAL MONEY on Binance Mainnet** (not testnet).
-- **Dashboard**: https://cryptotrader-dashboard.com
 - **GCP Project**: `cryptotrader-bot-20260115`
-- **GCP VM**: `cryptotrader-vm` in `europe-west4-a`
+- **GCP VM**: `cryptotrader-vm` in `europe-west4-a` (e2-small, ~$10/Mt mit CUD)
 - **Artifact Registry**: `europe-west6-docker.pkg.dev`
-- **Trading pairs**: SOL/USDT (grid strategy)
+- **Trading**: Prediction-Strategie (12 Coins, LightGBM, taegliches Retraining)
 - **VM OS**: Container-Optimized OS (COS)
+- **Architektur**: Bot laeuft auf VM, Dashboard laeuft lokal (via SSH-Tunnel)
 
 ## Deployment
+
+### Architektur-Uebersicht
+```
+[GCP VM (e2-small)]           [Lokaler PC]
+  Bot + API (Port 8082)  <---SSH-Tunnel--->  Dashboard (Port 8081)
+  Docker Container                           python -m dashboard.main
+  24/7 Trading                               Bei Bedarf starten
+```
 
 ### Full Deploy (Build + Push + Restart)
 ```bash
 # Step 1: Build and push Docker image to Artifact Registry
 gcloud builds submit --tag europe-west6-docker.pkg.dev/cryptotrader-bot-20260115/docker-repo-eu/cryptotrader:latest
 
-# Step 2: SSH to VM, authenticate Docker, pull new image, restart container
-gcloud compute ssh cryptotrader-vm --zone=europe-west4-a --project=cryptotrader-bot-20260115 --command="docker-credential-gcr configure-docker --registries=europe-west6-docker.pkg.dev && docker pull europe-west6-docker.pkg.dev/cryptotrader-bot-20260115/docker-repo-eu/cryptotrader:latest && docker stop cryptotrader 2>/dev/null; docker rm cryptotrader 2>/dev/null; docker run -d --name cryptotrader --restart unless-stopped -p 8080:8080 -p 8081:8081 --env-file /home/cryptotrader/config/.env -v /home/cryptotrader/logs:/app/logs europe-west6-docker.pkg.dev/cryptotrader-bot-20260115/docker-repo-eu/cryptotrader:latest"
+# Step 2: SSH to VM, pull new image, restart container (nur Bot, kein Dashboard)
+gcloud compute ssh cryptotrader-vm --zone=europe-west4-a --project=cryptotrader-bot-20260115 --command="docker-credential-gcr configure-docker --registries=europe-west6-docker.pkg.dev && docker pull europe-west6-docker.pkg.dev/cryptotrader-bot-20260115/docker-repo-eu/cryptotrader:latest && docker stop cryptotrader 2>/dev/null; docker rm cryptotrader 2>/dev/null; docker run -d --name cryptotrader --restart unless-stopped -p 8082:8082 --env-file /home/cryptotrader/config/.env -v /home/cryptotrader/logs:/app/logs europe-west6-docker.pkg.dev/cryptotrader-bot-20260115/docker-repo-eu/cryptotrader:latest bot"
 ```
 
 ### Quick Restart (No Code Changes)
 ```bash
-# Just restart the existing container
 gcloud compute ssh cryptotrader-vm --zone=europe-west4-a --project=cryptotrader-bot-20260115 --command="docker restart cryptotrader"
 ```
 
@@ -36,11 +43,26 @@ gcloud compute ssh cryptotrader-vm --zone=europe-west4-a --project=cryptotrader-
 gcloud compute ssh cryptotrader-vm --zone=europe-west4-a --project=cryptotrader-bot-20260115 --command="docker logs cryptotrader -f --tail 50"
 ```
 
-### Local Testing
+### Dashboard lokal starten (mit SSH-Tunnel zur VM)
 ```bash
-# Run dashboard locally (connects to local bot API on port 8080)
+# Option 1: Batch-Skript (oeffnet Tunnel + Dashboard automatisch)
+start_dashboard_remote.bat
+
+# Option 2: Manuell (2 Terminals)
+# Terminal 1: SSH-Tunnel
+gcloud compute ssh cryptotrader-vm --zone=europe-west4-a --project=cryptotrader-bot-20260115 -- -L 8082:localhost:8082 -N
+
+# Terminal 2: Dashboard
+set DASHBOARD_API_BASE_URL=http://localhost:8082
 python -m dashboard.main
-# Dashboard available at http://localhost:8081
+# Dashboard: http://localhost:8081
+```
+
+### Dashboard lokal (ohne VM, nur fuer Entwicklung)
+```bash
+# Bot lokal starten, dann Dashboard
+python scripts/start_prediction_bot.py
+python -m dashboard.main
 ```
 
 ## Troubleshooting
