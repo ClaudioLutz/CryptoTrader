@@ -1,0 +1,26 @@
+# Cloud Build Ignore - basiert auf .gitignore aber erlaubt coin_prediction_src/
+#include:.gitignore
+
+# coin_prediction_src/ explizit NICHT ignorieren (wird fuer Docker-Build gebraucht)
+!coin_prediction_src/
+
+# Grosse/unnoetige Verzeichnisse fuer Cloud Build ausschliessen
+.git/
+venv/
+__pycache__/
+*.pyc
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+node_modules/
+*.egg-info/
+logs/
+/data/
+trading_dashboard/
+notebooks/
+docs/
+tests/
+.claude/
+_bmad/
+.env
+*.db

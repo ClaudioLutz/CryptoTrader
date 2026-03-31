@@ -166,8 +166,11 @@ async def main() -> int:
     from crypto_bot.prediction.prediction_config import DEFAULT_PREDICTION_COINS
     from crypto_bot.prediction.prediction_pipeline import PredictionPipeline
 
+    import os
+    coin_prediction_path = os.environ.get("COIN_PREDICTION_PATH", "C:/Codes/coin_prediction")
+
     pipeline = PredictionPipeline(
-        coin_prediction_path="C:/Codes/coin_prediction",
+        coin_prediction_path=coin_prediction_path,
         coins=list(DEFAULT_PREDICTION_COINS),
         horizon_days=7,
     )

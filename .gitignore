@@ -95,3 +95,6 @@ trading_dashboard/config.yaml
 !trading_dashboard/config.yaml.example
 uv.lock
 nul
+
+# Temporaerer Build-Context fuer coin_prediction
+coin_prediction_src/

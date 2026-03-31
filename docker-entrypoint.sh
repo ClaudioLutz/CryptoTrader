@@ -27,10 +27,16 @@ log_error() {
 # Ensure logs directory exists
 mkdir -p /app/logs
 
-# Function to start the trading bot
+# Function to start the trading bot (grid strategy)
 start_bot() {
-    log_info "Starting CryptoTrader Bot..."
+    log_info "Starting CryptoTrader Bot (Grid Strategy)..."
     exec python -m crypto_bot.main --api-port ${HEALTH__PORT:-8080}
+}
+
+# Function to start the prediction bot
+start_prediction() {
+    log_info "Starting CryptoTrader Bot (Prediction Strategy)..."
+    exec python scripts/start_prediction_bot.py
 }
 
 # Function to start the dashboard
@@ -98,6 +104,9 @@ case "$1" in
     bot)
         start_bot
         ;;
+    prediction)
+        start_prediction
+        ;;
     dashboard)
         start_dashboard
         ;;
@@ -106,7 +115,7 @@ case "$1" in
         ;;
     *)
         log_error "Unknown command: $1"
-        echo "Usage: docker-entrypoint.sh [bot|dashboard|all]"
+        echo "Usage: docker-entrypoint.sh [bot|prediction|dashboard|all]"
         exit 1
         ;;
 esac

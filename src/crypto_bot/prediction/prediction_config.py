@@ -64,4 +64,8 @@ class PredictionConfig(StrategyConfig):
     retrain_hour_utc: int = Field(default=0, ge=0, le=23)
     retrain_minute_utc: int = Field(default=5, ge=0, le=59)
     prediction_horizon_days: int = Field(default=7, ge=1, le=30)
-    coin_prediction_path: str = "C:/Codes/coin_prediction"
+    coin_prediction_path: str = Field(
+        default_factory=lambda: __import__("os").environ.get(
+            "COIN_PREDICTION_PATH", "C:/Codes/coin_prediction"
+        ),
+    )
