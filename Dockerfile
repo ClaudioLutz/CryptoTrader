@@ -50,6 +50,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     HEALTH__PORT=8080 \
     DASHBOARD_PORT=8081 \
     COIN_PREDICTION_PATH=/app/coin_prediction \
+    # coin_prediction Pipeline-Settings (BTC 1h-Strategie)
+    PIPELINE__COINS=BTC \
+    PIPELINE__TIMEFRAME=1h \
+    PIPELINE__START_DATE=2020-01-01 \
+    PIPELINE__HORIZONS=1,3,7 \
+    PIPELINE__RANDOM_SEED=42 \
     # Safety defaults - ALWAYS start in safe mode
     EXCHANGE__TESTNET=true \
     TRADING__DRY_RUN=true
