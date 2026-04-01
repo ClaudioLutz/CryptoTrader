@@ -80,11 +80,6 @@ class PredictionPipeline:
         from src.ingestion.funding_fetcher import fetch_all_funding_rates
         from src.ingestion.ohlcv_fetcher import fetch_all_coins
         from src.ingestion.sentiment_fetcher import fetch_fear_greed
-        from src.models.ensemble import (
-            RegimeSplitEnsemble,
-            predict_regime_ensemble,
-            train_regime_ensemble,
-        )
         from src.models.lightgbm_model import predict_with_confidence, train_lightgbm
         from src.models.quantile_model import (
             create_return_target,
@@ -107,8 +102,6 @@ class PredictionPipeline:
         self._train_quantile_models = train_quantile_models
         self._predict_quantiles = predict_quantiles
         self._create_return_target = create_return_target
-        self._train_regime_ensemble = train_regime_ensemble
-        self._predict_regime_ensemble = predict_regime_ensemble
         self._fetch_all_funding_rates = fetch_all_funding_rates
         self._fetch_derivatives = fetch_and_save_derivatives
 
