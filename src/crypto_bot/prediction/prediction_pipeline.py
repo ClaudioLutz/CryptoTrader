@@ -70,8 +70,15 @@ class PredictionPipeline:
         from src.config.settings import get_settings as cp_get_settings
         from src.features.feature_selection import select_features
         from src.features.pipeline import build_all_features, build_features_for_coin
+        from src.ingestion.derivatives_fetcher import fetch_and_save_derivatives
+        from src.ingestion.funding_fetcher import fetch_all_funding_rates
         from src.ingestion.ohlcv_fetcher import fetch_all_coins
         from src.ingestion.sentiment_fetcher import fetch_fear_greed
+        from src.models.ensemble import (
+            RegimeSplitEnsemble,
+            predict_regime_ensemble,
+            train_regime_ensemble,
+        )
         from src.models.lightgbm_model import predict_with_confidence, train_lightgbm
         from src.models.quantile_model import (
             create_return_target,
@@ -94,6 +101,10 @@ class PredictionPipeline:
         self._train_quantile_models = train_quantile_models
         self._predict_quantiles = predict_quantiles
         self._create_return_target = create_return_target
+        self._train_regime_ensemble = train_regime_ensemble
+        self._predict_regime_ensemble = predict_regime_ensemble
+        self._fetch_all_funding_rates = fetch_all_funding_rates
+        self._fetch_derivatives = fetch_and_save_derivatives
 
         self._modules_loaded = True
         logger.info("coin_prediction_modules_loaded", path=path_str)
@@ -126,7 +137,22 @@ class PredictionPipeline:
             except Exception:
                 logger.warning("fear_greed_fetch_failed")
 
-            # 2. Features berechnen
+            # 1b. Funding Rates herunterladen
+            try:
+                logger.info("pipeline_step", step="fetch_funding_rates")
+                self._fetch_all_funding_rates(self._coins)
+            except Exception:
+                logger.warning("funding_rates_fetch_failed")
+
+            # 1c. Derivate-Daten sammeln (Long/Short, OI, Taker Volume)
+            # Binance haelt nur 30 Tage — wir sammeln taeglich fuer historischen Aufbau
+            try:
+                logger.info("pipeline_step", step="fetch_derivatives")
+                self._fetch_derivatives(self._coins)
+            except Exception:
+                logger.warning("derivatives_fetch_failed")
+
+            # 2. Features berechnen (inkl. Funding Rate Features)
             logger.info("pipeline_step", step="build_features")
             self._build_all_features(self._coins)
 
@@ -179,10 +205,13 @@ class PredictionPipeline:
         ohlcv = pd.read_parquet(ohlcv_path).set_index("timestamp").sort_index()
         close = ohlcv["close"]
 
-        # Target erstellen (Triple Barrier mit High/Low)
-        high = ohlcv["high"] if "high" in ohlcv.columns else None
-        low = ohlcv["low"] if "low" in ohlcv.columns else None
-        target = self._create_target(close, horizon_periods, high=high, low=low)
+        # Target: Einfaches binaeres Target (Preis in N Tagen hoeher?)
+        # Diagnose zeigte: Simple Target performt gleich oder besser als Triple Barrier
+        # weil TB mit asymmetrischen Barrieren (2x SL/3x TP) verzerrte Labels erzeugt
+        future_return = close.shift(-horizon_periods) / close - 1
+        target = (future_return > 0).astype(float)
+        target[future_return.isna()] = float("nan")
+        target.name = f"target_{horizon_periods}d"
 
         # Align
         common_idx = features.index.intersection(target.dropna().index)
@@ -192,8 +221,10 @@ class PredictionPipeline:
         # NaN-Spalten entfernen
         X = X.dropna(axis=1, how="all")
 
-        # Feature Selection (Core-Features)
-        X = self._select_features(X, method="core")
+        # Feature Selection: Korrelations-basiert (Top-15 pro Coin)
+        # Diagnose zeigte: Top-5-15 Features schlagen alle Features
+        # (SOL: +5%, DOGE: +1.4%)
+        X = self._select_features(X, method="correlation", target=y, top_n=15)
 
         # NaN-Zeilen entfernen
         valid = X.notna().all(axis=1) & y.notna()
@@ -213,8 +244,7 @@ class PredictionPipeline:
             for col in latest_features.columns[latest_features.isna().iloc[0]]:
                 latest_features[col] = X[col].median()
 
-        # Rollierendes Trainings-Fenster: nur die letzten 500 Tage verwenden
-        # Aeltere Daten stammen aus anderen Markt-Regimes und verwassern das Modell
+        # Rollierendes Trainings-Fenster: 500 Tage
         max_train_days = 500
         if len(X) > max_train_days:
             X = X.iloc[-max_train_days:]
@@ -242,12 +272,12 @@ class PredictionPipeline:
         atr_14d = self._calculate_atr(ohlcv, period=14)
         last_close = float(close.iloc[-1])
         if last_close > 0 and atr_14d > 0:
-            # SL = 2.0x ATR, TP = 3.0x ATR (R:R = 1.5:1)
+            # SL = 2.0x ATR, TP = 2.0x ATR (symmetrisch, da Simple Target)
             sl_pct = min((2.0 * atr_14d) / last_close, 0.20)  # Max 20%
-            tp_pct = min((3.0 * atr_14d) / last_close, 0.30)  # Max 30%
+            tp_pct = min((2.0 * atr_14d) / last_close, 0.20)  # Max 20%
         else:
             sl_pct = 0.10  # Fallback
-            tp_pct = 0.15
+            tp_pct = 0.10
 
         # Quantil-Regression: Rendite-Intervall vorhersagen
         q10, q50, q90 = 0.0, 0.0, 0.0
