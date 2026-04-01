@@ -44,9 +44,13 @@ class PredictionStrategy:
             config.coin_prediction_path,
             config.coins,
             config.prediction_horizon_days,
+            timeframe=getattr(config, "timeframe", "1d"),
+            horizon_hours=getattr(config, "prediction_horizon_hours", 0),
+            train_window_hours=getattr(config, "train_window_hours", 720),
         )
         self._latest_predictions: dict[str, PredictionResult] = {}
         self._last_retrain_date: Optional[date] = None
+        self._last_retrain_time: Optional[datetime] = None
         self._active_orders: dict[str, str] = {}  # order_id -> coin
         self._symbols = [f"{coin}/{config.quote_currency}" for coin in config.coins]
         self._initialized = False
@@ -323,26 +327,41 @@ class PredictionStrategy:
                 logger.warning("position_migration_failed", coin=pos.coin, exc_info=True)
 
     def _should_retrain(self, now: datetime) -> bool:
-        """Prueft ob ein Retrain faellig ist (1x taegl. zur konfigurierten Zeit)."""
-        if self._last_retrain_date == now.date():
+        """Prueft ob ein Retrain faellig ist.
+
+        Bei 1h-Timeframe: alle retrain_interval_hours (z.B. 4h).
+        Bei 1d-Timeframe: 1x taeglich zur konfigurierten Zeit.
+        """
+        retrain_interval = getattr(self._config, "retrain_interval_hours", 0)
+
+        if retrain_interval > 0:
+            # Stundl. Intervall-basiert (fuer 1h-Timeframe)
+            if self._last_retrain_time is None:
+                return True
+            elapsed = (now - self._last_retrain_time).total_seconds() / 3600
+            return elapsed >= retrain_interval
+        else:
+            # Taeglich (Legacy fuer 1d-Timeframe)
+            if self._last_retrain_date == now.date():
+                return False
+            if now.hour > self._config.retrain_hour_utc:
+                return True
+            if (
+                now.hour == self._config.retrain_hour_utc
+                and now.minute >= self._config.retrain_minute_utc
+            ):
+                return True
             return False
-        # Retrain wenn Stunde >= konfigurierte Stunde
-        if now.hour > self._config.retrain_hour_utc:
-            return True
-        if (
-            now.hour == self._config.retrain_hour_utc
-            and now.minute >= self._config.retrain_minute_utc
-        ):
-            return True
-        return False
 
     async def _run_retrain(self) -> None:
         """Fuehrt die Prediction-Pipeline in einem Background-Thread aus."""
         async with self._retrain_lock:
-            logger.info("prediction_retrain_start")
+            logger.info("prediction_retrain_start",
+                        timeframe=getattr(self._config, "timeframe", "1d"))
             try:
                 self._latest_predictions = await self._pipeline.run_full_pipeline()
                 self._last_retrain_date = date.today()
+                self._last_retrain_time = datetime.now(timezone.utc)
                 logger.info(
                     "prediction_retrain_complete",
                     n_predictions=len(self._latest_predictions),
@@ -424,7 +443,9 @@ class PredictionStrategy:
                     cost=position_size,
                     buy_order_id=order_id,
                     opened_at=now,
-                    close_at=now + timedelta(days=self._config.prediction_horizon_days),
+                    close_at=now + timedelta(hours=getattr(
+                        self._config, "prediction_horizon_hours",
+                        self._config.prediction_horizon_days * 24)),
                     stop_loss_price=sl_price,
                     take_profit_price=tp_price,
                 )

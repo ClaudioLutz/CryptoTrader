@@ -42,8 +42,8 @@ class PredictionResult:
 class PredictionPipeline:
     """Wrapper um coin_prediction fuer Live-Inference.
 
-    Importiert Module aus dem coin_prediction-Projekt dynamisch,
-    um zirkulaere Abhaengigkeiten zu vermeiden.
+    Unterstuetzt 1h-Timeframe (BTC-only) und 1d-Timeframe (Multi-Coin).
+    Bei 1h werden Features inline berechnet (schneller, keine Feature-Pipeline noetig).
     """
 
     def __init__(
@@ -51,10 +51,16 @@ class PredictionPipeline:
         coin_prediction_path: str,
         coins: list[str],
         horizon_days: int = 7,
+        timeframe: str = "1d",
+        horizon_hours: int = 0,
+        train_window_hours: int = 720,
     ) -> None:
         self._path = Path(coin_prediction_path)
         self._coins = coins
         self._horizon_days = horizon_days
+        self._timeframe = timeframe
+        self._horizon_hours = horizon_hours or (horizon_days * 24)
+        self._train_window_hours = train_window_hours
         self._modules_loaded = False
 
     def _ensure_imports(self) -> None:
@@ -126,45 +132,50 @@ class PredictionPipeline:
             self._ensure_imports()
             settings = self._cp_get_settings()
             data_dir = settings.pipeline.data_dir
-            timeframe = settings.pipeline.timeframe
             seed = settings.pipeline.random_seed
 
-            # 1. Daten herunterladen
-            logger.info("pipeline_step", step="fetch_data", coins=len(self._coins))
+            # 1. Daten herunterladen (OHLCV fuer konfigurierten Timeframe)
+            logger.info("pipeline_step", step="fetch_data", coins=len(self._coins),
+                        timeframe=self._timeframe)
             self._fetch_all_coins(self._coins)
-            try:
-                self._fetch_fear_greed()
-            except Exception:
-                logger.warning("fear_greed_fetch_failed")
 
-            # 1b. Funding Rates herunterladen
+            # Funding Rates und Derivate sammeln (unabhaengig vom Timeframe)
             try:
-                logger.info("pipeline_step", step="fetch_funding_rates")
                 self._fetch_all_funding_rates(self._coins)
             except Exception:
                 logger.warning("funding_rates_fetch_failed")
-
-            # 1c. Derivate-Daten sammeln (Long/Short, OI, Taker Volume)
-            # Binance haelt nur 30 Tage — wir sammeln taeglich fuer historischen Aufbau
             try:
-                logger.info("pipeline_step", step="fetch_derivatives")
                 self._fetch_derivatives(self._coins)
             except Exception:
                 logger.warning("derivatives_fetch_failed")
 
-            # 2. Features berechnen (inkl. Funding Rate Features)
-            logger.info("pipeline_step", step="build_features")
-            self._build_all_features(self._coins)
+            # 2. Bei 1h: Features inline berechnen (kein Umweg ueber Feature-Pipeline)
+            #    Bei 1d: Features ueber coin_prediction Feature-Pipeline
+            if self._timeframe == "1h":
+                try:
+                    self._fetch_fear_greed()
+                except Exception:
+                    logger.warning("fear_greed_fetch_failed")
+            else:
+                try:
+                    self._fetch_fear_greed()
+                except Exception:
+                    logger.warning("fear_greed_fetch_failed")
+                logger.info("pipeline_step", step="build_features")
+                self._build_all_features(self._coins)
 
             # 3. Fuer jeden Coin: trainieren und predicten
             results: dict[str, PredictionResult] = {}
-            horizon_periods = self._days_to_periods(self._horizon_days, timeframe)
 
             for coin in self._coins:
                 try:
-                    result = self._train_and_predict_coin(
-                        coin, data_dir, timeframe, horizon_periods, seed,
-                    )
+                    if self._timeframe == "1h":
+                        result = self._train_and_predict_1h(coin, data_dir, seed)
+                    else:
+                        horizon_periods = self._days_to_periods(
+                            self._horizon_days, self._timeframe)
+                        result = self._train_and_predict_coin(
+                            coin, data_dir, self._timeframe, horizon_periods, seed)
                     if result:
                         results[coin] = result
                 except Exception:
@@ -333,6 +344,182 @@ class PredictionPipeline:
             q10=q10,
             q50=q50,
             q90=q90,
+        )
+
+    def _build_1h_features(self, ohlcv: "pd.DataFrame", data_dir: "Path", coin: str) -> "pd.DataFrame":
+        """Baut Features direkt aus 1h-OHLCV-Daten (kein Umweg ueber Feature-Pipeline).
+
+        Features sind optimiert fuer stuendliche Aufloesung:
+        - Returns: 1h, 4h, 12h, 24h, 72h, 168h
+        - Volatilitaet: 12h, 24h, 72h, 168h Standardabweichung
+        - RSI: 14 Perioden (= 14 Stunden)
+        - Volume: Ratio 24h/168h Durchschnitt
+        - High/Low Range: 24h normalisiert
+        - Funding Rate: taeglich, reindexed auf 1h (falls verfuegbar)
+        """
+        import numpy as np
+        import pandas as pd
+
+        close = ohlcv["close"].astype(float)
+        volume = ohlcv["volume"].astype(float)
+        high = ohlcv["high"].astype(float)
+        low = ohlcv["low"].astype(float)
+
+        features = pd.DataFrame(index=ohlcv.index)
+
+        # Returns (verschiedene Lookback-Fenster)
+        for p in [1, 4, 12, 24, 72, 168]:
+            features[f"ret_{p}h"] = close.pct_change(p)
+
+        # Volatilitaet (Rolling Std der stuendlichen Returns)
+        hourly_ret = close.pct_change()
+        for w in [12, 24, 72, 168]:
+            features[f"vol_{w}h"] = hourly_ret.rolling(w).std()
+
+        # RSI-14 (14 Stunden)
+        delta = close.diff()
+        gain = delta.where(delta > 0, 0).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rs = gain / loss.replace(0, np.nan)
+        features["rsi_14h"] = 100 - (100 / (1 + rs))
+
+        # Volume-Ratio (kurzfristig vs langfristig)
+        vol_24 = volume.rolling(24).mean()
+        vol_168 = volume.rolling(168).mean()
+        features["vol_ratio_24_168"] = vol_24 / vol_168.replace(0, np.nan)
+
+        # High/Low Range (24h, normalisiert auf Close)
+        features["hl_range_24h"] = (
+            high.rolling(24).max() - low.rolling(24).min()
+        ) / close
+
+        # MACD (12/26/9 Stunden)
+        ema12 = close.ewm(span=12, adjust=False).mean()
+        ema26 = close.ewm(span=26, adjust=False).mean()
+        features["macd"] = ema12 - ema26
+        features["macd_signal"] = features["macd"].ewm(span=9, adjust=False).mean()
+        features["macd_hist"] = features["macd"] - features["macd_signal"]
+
+        # Bollinger Band Position
+        sma20 = close.rolling(20).mean()
+        std20 = close.rolling(20).std()
+        features["bb_position"] = (close - sma20) / (2 * std20).replace(0, np.nan)
+
+        # Funding Rate (falls verfuegbar)
+        funding_path = data_dir / "raw" / f"{coin}_funding.parquet"
+        if funding_path.exists():
+            try:
+                funding = pd.read_parquet(funding_path)
+                if "timestamp" in funding.columns:
+                    funding = funding.set_index("timestamp").sort_index()
+                fr = funding["funding_rate"].reindex(features.index, method="ffill")
+                features["funding_rate"] = fr
+                features["funding_3d_ma"] = fr.rolling(72).mean()  # 3 Tage * 24h
+            except Exception:
+                pass
+
+        return features
+
+    def _train_and_predict_1h(
+        self,
+        coin: str,
+        data_dir: "Path",
+        seed: int,
+    ) -> PredictionResult | None:
+        """Training und Prediction mit 1h-Daten (inline Features)."""
+        import numpy as np
+        import pandas as pd
+
+        ohlcv_path = data_dir / "raw" / f"{coin}_USDT_1h.parquet"
+        if not ohlcv_path.exists():
+            logger.warning("1h_data_missing", coin=coin)
+            return None
+
+        ohlcv = pd.read_parquet(ohlcv_path)
+        if "timestamp" in ohlcv.columns:
+            ohlcv = ohlcv.set_index("timestamp").sort_index()
+        close = ohlcv["close"].astype(float)
+
+        # Features inline berechnen
+        features = self._build_1h_features(ohlcv, data_dir, coin)
+
+        # Target: Preis in N Stunden hoeher?
+        horizon_h = self._horizon_hours
+        future_return = close.shift(-horizon_h) / close - 1
+        target = (future_return > 0).astype(float)
+        target[future_return.isna()] = float("nan")
+
+        # Align und NaN entfernen
+        common_idx = features.index.intersection(target.dropna().index)
+        X = features.loc[common_idx]
+        y = target.loc[common_idx]
+        valid = X.notna().all(axis=1) & y.notna()
+        X, y = X[valid], y[valid]
+
+        if len(X) < 200:
+            logger.warning("too_few_samples_1h", coin=coin, n=len(X))
+            return None
+
+        # Live-Prediction: neueste Feature-Zeile
+        latest_features = features[X.columns].ffill().iloc[[-1]].copy()
+        if latest_features.isna().any(axis=1).iloc[0]:
+            for col in latest_features.columns[latest_features.isna().iloc[0]]:
+                latest_features[col] = X[col].median()
+
+        # Rolling Window: letzte N Stunden
+        max_train = self._train_window_hours
+        if len(X) > max_train:
+            X = X.iloc[-max_train:]
+            y = y.iloc[-max_train:]
+
+        # Train/Val Split (80/20)
+        split_idx = int(len(X) * 0.8)
+        X_train, y_train = X.iloc[:split_idx], y.iloc[:split_idx]
+        X_val, y_val = X.iloc[split_idx:], y.iloc[split_idx:]
+
+        # LightGBM trainieren
+        model = self._train_lightgbm(X_train, y_train, X_val, y_val, seed=seed)
+
+        # Prediction
+        preds, proba = self._predict_with_confidence(model, latest_features)
+        probability = float(proba[0])
+        direction = "up" if probability > 0.5 else "down"
+        confidence = abs(probability - 0.5) + 0.5
+
+        features_date = str(latest_features.index[0])
+
+        # ATR fuer SL/TP (auf 1h-Basis, 14 Perioden = 14 Stunden)
+        atr = self._calculate_atr(ohlcv, period=14)
+        last_close = float(close.iloc[-1])
+        if last_close > 0 and atr > 0:
+            sl_pct = min((2.0 * atr) / last_close, 0.10)  # Max 10% (kuerzer bei 1h)
+            tp_pct = min((2.0 * atr) / last_close, 0.10)
+        else:
+            sl_pct = 0.05
+            tp_pct = 0.05
+
+        logger.info(
+            "coin_predicted_1h",
+            coin=coin,
+            direction=direction,
+            probability=round(probability, 4),
+            confidence=round(confidence, 4),
+            features_date=features_date,
+            horizon_hours=horizon_h,
+            atr=round(atr, 2),
+            sl_pct=round(sl_pct * 100, 1),
+            tp_pct=round(tp_pct * 100, 1),
+        )
+
+        return PredictionResult(
+            coin=coin,
+            direction=direction,
+            probability=probability,
+            confidence=confidence,
+            features_date=features_date,
+            atr_14d=atr,
+            sl_pct=sl_pct,
+            tp_pct=tp_pct,
         )
 
     @staticmethod

@@ -1,4 +1,8 @@
-"""Konfiguration fuer die Prediction-Strategie."""
+"""Konfiguration fuer die Prediction-Strategie.
+
+BTC-only mit 1h-Daten: Backtest zeigte 55.5% Win-Rate auf 22'000 Trades.
+Taeglich-Daten mit Multi-Coin brachten nur ~50% Accuracy (Muenzwurf).
+"""
 
 from decimal import Decimal
 
@@ -6,66 +10,52 @@ from pydantic import Field
 
 from crypto_bot.strategies.base_strategy import StrategyConfig
 
-# Coins mit historischer Accuracy > 54% im Backtest (80/20 Split, 7d Horizont)
-# Ausgeschlossen: BTC (50.2%), ETH (46.1%), BNB (48.7%), XRP (50.1%),
-#                 FIL (49.8%), UNI (50.8%), LINK (51.6%), LTC (52.4%)
-# Diese Coins sind zu effizient fuer ML-basiertes Trading.
-PROFITABLE_COINS = [
-    # >58% Accuracy (stark)
-    "MATIC", "DOT", "ETC", "ADA", "XLM",
-    # 55-58% Accuracy (solide)
-    "EOS", "ATOM", "TRX", "DOGE",
-    # 53-55% Accuracy (knapp profitabel)
-    "AVAX", "SOL", "NEAR",
-]
+# BTC-only Strategie: 1h-Daten, 3d Horizont (72h)
+# Walk-Forward Backtest (319 Folds, 22k Trades): 55.5% Win-Rate
+DEFAULT_PREDICTION_COINS = ["BTC"]
 
-# Alle Coins fuer Training/Analyse (inkl. unprofitable fuer Completeness)
+# Alle Coins mit 1h-Daten im coin_prediction-Projekt (fuer spaeteren Ausbau)
 ALL_PREDICTION_COINS = [
-    # Tier 1: >$30M Volumen
-    "BTC", "ETH", "SOL", "XRP", "BCH", "BNB", "TAO", "TRX", "DOGE", "SUI",
-    # Tier 2: $5M-$30M Volumen
-    "ADA", "ZEC", "FET", "LINK", "WLD", "NEAR", "LTC", "CHZ", "AVAX", "FIL",
-    "ANKR", "ENA",
-    # Tier 3: $2M-$5M Volumen
-    "ONT", "ENJ", "DOT", "XLM", "AAVE", "UNI", "HBAR", "ICP", "ARB", "RENDER",
-    "APT", "CFX", "SEI", "CRV",
-    # Legacy (bestehende Features im coin_prediction-Projekt)
-    "ETC", "EOS", "ATOM", "MATIC",
+    "BTC", "ETH", "SOL", "XRP", "BNB", "TRX", "DOGE",
+    "ADA", "DOT", "ETC", "EOS", "ATOM", "AVAX", "NEAR",
+    "XLM", "MATIC", "LINK", "LTC",
 ]
-
-# Default: Nur profitable Coins handeln
-DEFAULT_PREDICTION_COINS = PROFITABLE_COINS
 
 
 class PredictionConfig(StrategyConfig):
     """Konfiguration fuer die Prediction-basierte Trading-Strategie.
 
-    Attributes:
-        coins: Liste der zu handelnden Coins.
-        quote_currency: Quote-Waehrung (Standard: USDT).
-        total_capital: Gesamtes USDT-Budget fuer die Strategie.
-        max_per_coin_pct: Maximaler Anteil pro Coin am Gesamtkapital.
-        max_total_exposure_pct: Maximale Gesamtexposure (Rest bleibt in USDT).
-        min_confidence: Minimale Confidence fuer einen Trade (0.5-1.0).
-        retrain_hour_utc: Stunde fuer taegliches Retraining (UTC).
-        retrain_minute_utc: Minute fuer taegliches Retraining.
-        prediction_horizon_days: Vorhersage-Horizont in Tagen.
-        coin_prediction_path: Pfad zum coin_prediction-Projekt.
+    BTC-only mit 1h-Timeframe. Retraining alle 4 Stunden.
+    Positionen werden nach prediction_horizon_hours geschlossen.
     """
 
     name: str = "prediction"
-    symbol: str = "MULTI/USDT"
+    symbol: str = "BTC/USDT"
     coins: list[str] = Field(default_factory=lambda: list(DEFAULT_PREDICTION_COINS))
     quote_currency: str = "USDT"
     total_capital: Decimal = Decimal("0")  # 0 = dynamisch aus USDT-Balance
-    max_per_coin_pct: Decimal = Decimal("0.20")
-    max_total_exposure_pct: Decimal = Decimal("0.60")
-    min_confidence: float = Field(default=0.65, ge=0.50, le=1.0)
-    retrain_hour_utc: int = Field(default=0, ge=0, le=23)
-    retrain_minute_utc: int = Field(default=5, ge=0, le=59)
-    prediction_horizon_days: int = Field(default=7, ge=1, le=30)
+    max_per_coin_pct: Decimal = Decimal("0.80")  # BTC-only: 80% pro Coin
+    max_total_exposure_pct: Decimal = Decimal("0.80")  # BTC-only: hoehere Exposure ok
+    min_confidence: float = Field(default=0.60, ge=0.50, le=1.0)
+    retrain_interval_hours: int = Field(default=4, ge=1, le=24)
+    prediction_horizon_hours: int = Field(default=72, ge=1, le=720)  # 3 Tage = 72h
+    timeframe: str = Field(default="1h")
+    train_window_hours: int = Field(default=720, ge=168, le=8760)  # 30 Tage = 720h
     coin_prediction_path: str = Field(
         default_factory=lambda: __import__("os").environ.get(
             "COIN_PREDICTION_PATH", "C:/Codes/coin_prediction"
         ),
     )
+
+    # Abwaertskompatibilitaet
+    @property
+    def prediction_horizon_days(self) -> int:
+        return max(1, self.prediction_horizon_hours // 24)
+
+    @property
+    def retrain_hour_utc(self) -> int:
+        return 0
+
+    @property
+    def retrain_minute_utc(self) -> int:
+        return 5
