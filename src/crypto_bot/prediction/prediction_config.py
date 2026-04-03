@@ -36,7 +36,7 @@ class PredictionConfig(StrategyConfig):
     total_capital: Decimal = Decimal("0")  # 0 = dynamisch aus USDT-Balance
     max_per_coin_pct: Decimal = Decimal("0.80")  # BTC-only: 80% pro Coin
     max_total_exposure_pct: Decimal = Decimal("0.80")  # BTC-only: hoehere Exposure ok
-    min_confidence: float = Field(default=0.60, ge=0.50, le=1.0)
+    min_confidence: float = Field(default=0.65, ge=0.50, le=1.0)
     retrain_interval_hours: int = Field(default=1, ge=1, le=24)
     prediction_horizon_hours: int = Field(default=72, ge=1, le=720)  # 3 Tage = 72h
     timeframe: str = Field(default="1h")
