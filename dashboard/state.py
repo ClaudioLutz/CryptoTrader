@@ -112,6 +112,13 @@ class DashboardState:
         self.bot_config: BotConfig | None = None
         self.show_grid_overlay: bool = True  # Toggle for grid lines
 
+        # Prediction data (BTC 1h strategy)
+        self.prediction_history: list[dict[str, Any]] = []
+        self.model_info: dict[str, Any] | None = None
+        self.current_prediction: dict[str, Any] | None = None
+        self.open_positions: list[dict[str, Any]] = []
+        self.closed_positions: list[dict[str, Any]] = []
+
         # Full API response for advanced components
         self._raw_status: dict[str, Any] | None = None
 
@@ -657,6 +664,27 @@ class DashboardState:
         self.ohlcv_by_symbol[symbol] = ohlcv_data  # Store per symbol
         logger.debug("OHLCV refreshed: %d candles for %s", len(ohlcv_data), symbol)
         return ohlcv_data
+
+    async def refresh_prediction_data(self) -> None:
+        """Refresh prediction history and model info from bot API."""
+        if not self._api_client:
+            return
+
+        try:
+            data = await self._api_client.get_prediction_history(limit=168)
+            self.prediction_history = data.get("history", [])
+            self.model_info = data.get("model_info")
+            self.current_prediction = data.get("current_prediction")
+            positions = data.get("positions", {})
+            self.open_positions = positions.get("open", [])
+            self.closed_positions = positions.get("closed", [])
+            logger.debug(
+                "Prediction data refreshed: %d history entries, %d open positions",
+                len(self.prediction_history),
+                len(self.open_positions),
+            )
+        except Exception as e:
+            logger.error("Failed to refresh prediction data: %s", str(e))
 
     async def refresh_full_status(self) -> None:
         """Refresh full API status response for advanced components."""

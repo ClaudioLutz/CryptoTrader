@@ -1,9 +1,7 @@
 """CryptoTrader Dashboard - Header Strip Component.
 
-Fixed header that answers "Is everything okay?" in under 5 seconds.
-Contains slots for: status, P&L, pair count, order count, timestamp.
-
-Uses @ui.refreshable to enable reactive updates when state changes.
+Fixed header for BTC 1h Prediction-Strategie.
+Shows: Status | Current Prediction | P&L | Uptime | Timestamp
 """
 
 from nicegui import ui
@@ -14,206 +12,133 @@ from dashboard.state import state
 def create_header() -> None:
     """Create the fixed header strip with status slots.
 
-    Layout: [Status] | [P&L] | [Pair Count] | [Order Count] | [Timestamp]
-
-    The header uses sticky positioning to remain visible during scroll.
-    Individual slots are populated by their respective components:
-    - Story 3.2: RAG status indicator
-    - Story 3.3: Last updated timestamp
-    - Story 3.4: Total P&L display
-    - Story 3.5: Pair count and order count
-
-    Uses closures to ensure per-client container references for multi-client support.
+    Layout: [Status] | [Prediction] | [P&L] | [Uptime] | [Timestamp]
     """
-    # Create containers in local scope (per-client)
     with ui.header().classes("fixed-header"):
         with ui.row().classes("header-content items-center justify-between w-full"):
-            # Status indicator slot (Story 3.2)
+            # Status indicator
             with ui.element("div").classes("header-slot status-slot") as status_container:
                 _create_status_content()
 
-            # P&L display slot (Story 3.4)
+            # Current prediction
+            with ui.element("div").classes("header-slot prediction-slot") as pred_container:
+                _create_prediction_content()
+
+            # P&L display
             with ui.element("div").classes("header-slot pnl-slot") as pnl_container:
                 _create_pnl_content()
 
-            # Pair count slot (Story 3.5)
-            with ui.element("div").classes("header-slot pairs-slot") as pairs_container:
-                _create_pair_count_content()
+            # Uptime
+            with ui.element("div").classes("header-slot uptime-slot") as uptime_container:
+                _create_uptime_content()
 
-            # Order count slot (Story 3.5)
-            with ui.element("div").classes("header-slot orders-slot") as orders_container:
-                _create_order_count_content()
-
-            # Timestamp slot (Story 3.3)
+            # Timestamp
             with ui.element("div").classes("header-slot timestamp-slot") as timestamp_container:
                 _create_timestamp_content()
 
-    # Create refresh function with closure over local containers
     def refresh_header() -> None:
-        """Refresh all header components with current state data."""
         status_container.clear()
         with status_container:
             _create_status_content()
+
+        pred_container.clear()
+        with pred_container:
+            _create_prediction_content()
 
         pnl_container.clear()
         with pnl_container:
             _create_pnl_content()
 
-        pairs_container.clear()
-        with pairs_container:
-            _create_pair_count_content()
-
-        orders_container.clear()
-        with orders_container:
-            _create_order_count_content()
+        uptime_container.clear()
+        with uptime_container:
+            _create_uptime_content()
 
         timestamp_container.clear()
         with timestamp_container:
             _create_timestamp_content()
 
-    # Set up auto-refresh timer (every 2 seconds to match tier1 polling)
     ui.timer(2.0, refresh_header)
 
 
 def _create_status_content() -> None:
-    """Create RAG status indicator with icon + text (Story 3.2, 6.4).
-
-    Uses unique icons for accessibility (not color alone):
-    - Healthy: circle icon (muted, receding)
-    - Reconnecting: rotating arrows icon (auto-retry in progress)
-    - Degraded/Stale: diamond icon (attention-drawing)
-    - Error/Offline: triangle icon (demands attention)
-    """
-    # Determine status, icon, text, and class
+    """Create RAG status indicator."""
     if state.is_reconnecting:
-        icon = "\u21bb"  # Rotating arrows
-        status_text = "RECONNECTING"
-        status_class = "status-warning"
+        icon, text, cls = "\u21bb", "RECONNECTING", "status-warning"
     elif state.is_offline:
-        icon = "\u25b2"  # Triangle
-        status_text = "OFFLINE"
-        status_class = "status-error"
+        icon, text, cls = "\u25b2", "OFFLINE", "status-error"
     elif state.is_stale:
-        icon = "\u25c6"  # Diamond
-        status_text = "STALE"
-        status_class = "status-warning"
+        icon, text, cls = "\u25c6", "STALE", "status-warning"
     elif state.is_healthy:
-        icon = "\u25cf"  # Circle
-        status_text = "HEALTHY"
-        status_class = "status-healthy"
-    elif state.health is not None and state.health.status == "degraded":
-        icon = "\u25c6"  # Diamond
-        status_text = "DEGRADED"
-        status_class = "status-warning"
+        icon, text, cls = "\u25cf", "HEALTHY", "status-healthy"
     else:
-        icon = "\u25c6"  # Diamond
-        status_text = "UNKNOWN"
-        status_class = "status-warning"
+        icon, text, cls = "\u25c6", "UNKNOWN", "status-warning"
 
-    with ui.row().classes(f"status-indicator {status_class} items-center gap-2"):
+    with ui.row().classes(f"status-indicator {cls} items-center gap-2"):
         ui.label(icon).classes("status-icon")
-        ui.label(status_text).classes("status-text")
+        ui.label(text).classes("status-text")
+
+
+def _create_prediction_content() -> None:
+    """Show current BTC prediction (direction + confidence)."""
+    pred = state.current_prediction
+    if not pred:
+        ui.label("BTC: --").classes("text-secondary text-xs")
+        return
+
+    direction = pred.get("direction", "?")
+    confidence = pred.get("confidence", 0)
+    min_conf = 0.65  # Default
+
+    if state.model_info:
+        min_conf = state.model_info.get("min_confidence", 0.65)
+
+    if direction == "up" and confidence >= min_conf:
+        arrow = "\u25b2"
+        color = "#4caf50"
+    elif direction == "down":
+        arrow = "\u25bc"
+        color = "#f44336"
+    else:
+        arrow = "\u25b6"
+        color = "#9e9e9e"
+
+    with ui.row().classes("items-center gap-1"):
+        ui.label(f"BTC {arrow}").style(f"color: {color}; font-weight: 600; font-size: 0.85em")
+        ui.label(f"{confidence:.0%}").style(f"color: {color}; font-size: 0.8em")
 
 
 def _create_pnl_content() -> None:
-    """Create professional 3-value P&L display (Phase 1 hardening).
-
-    Displays: Realized | Unrealized | Total
-    - Realized: Locked-in grid profits from completed cycles
-    - Unrealized: Mark-to-market floating P&L on open positions
-    - Total: Sum of realized + unrealized
-    """
+    """P&L display: Realized | Unrealized | Total."""
     with ui.row().classes("pnl-breakdown gap-4"):
-        # Realized (Grid Profit)
         with ui.column().classes("pnl-item"):
             ui.label("Realized").classes("pnl-label text-xs")
-            _create_pnl_value(state.realized_pnl, "realized")
+            _create_pnl_value(state.realized_pnl)
 
-        # Unrealized (Floating)
         with ui.column().classes("pnl-item"):
             ui.label("Unrealized").classes("pnl-label text-xs")
-            _create_pnl_value(state.unrealized_pnl, "unrealized")
+            _create_pnl_value(state.unrealized_pnl)
 
-        # Total
         with ui.column().classes("pnl-item"):
             ui.label("Total").classes("pnl-label text-xs font-bold")
-            _create_pnl_value(state.total_pnl, "total")
+            _create_pnl_value(state.total_pnl)
 
 
-def _create_pnl_value(pnl: float, pnl_type: str) -> None:
-    """Create individual P&L value with styling.
-
-    Args:
-        pnl: P&L value (Decimal or float).
-        pnl_type: Type of P&L (realized, unrealized, total) for CSS classes.
-    """
+def _create_pnl_value(pnl: float) -> None:
     if pnl > 0:
-        pnl_class = "pnl-positive"
-        pnl_text = f"+\u20ac{pnl:.2f}"
+        ui.label(f"+${pnl:.2f}").classes("pnl-value pnl-positive")
     elif pnl < 0:
-        pnl_class = "pnl-negative"
-        pnl_text = f"-\u20ac{abs(pnl):.2f}"
+        ui.label(f"-${abs(pnl):.2f}").classes("pnl-value pnl-negative")
     else:
-        pnl_class = "pnl-neutral"
-        pnl_text = "\u20ac0.00"
-
-    ui.label(pnl_text).classes(f"pnl-value {pnl_class} {pnl_type}")
+        ui.label("$0.00").classes("pnl-value pnl-neutral")
 
 
-def _create_pair_count_content() -> None:
-    """Create pair count display showing active/expected (Story 3.5).
-
-    Format: "X/Y pairs" where X is active and Y is expected.
-    - All pairs active: secondary text color
-    - Fewer pairs: amber warning color
-    """
-    # Expected pairs - could be moved to config later
-    expected_pairs = 4
-    active_pairs = state.pair_count
-
-    # Amber warning if fewer pairs than expected
-    if active_pairs < expected_pairs:
-        count_class = "count-warning"
-    else:
-        count_class = "pair-count"
-
-    ui.label(f"{active_pairs}/{expected_pairs} pairs").classes(count_class)
-
-
-def _create_order_count_content() -> None:
-    """Create order count display (Story 3.5).
-
-    Shows total open orders across all pairs.
-    Prefers actual orders from exchange over strategy stats for accuracy.
-    """
-    # Prefer actual orders from orders_by_symbol (fetched from exchange)
-    # over strategy stats which may not include manually placed orders
-    total_from_orders = sum(len(orders) for orders in state.orders_by_symbol.values())
-    if total_from_orders > 0:
-        order_count = total_from_orders
-    elif state.orders:
-        order_count = len(state.orders)
-    elif state.pairs:
-        order_count = sum(p.order_count for p in state.pairs)
-    else:
-        order_count = 0
-
-    ui.label(f"{order_count} ord").classes("order-count")
+def _create_uptime_content() -> None:
+    """Show bot uptime."""
+    ui.label(state.uptime_formatted).classes("text-secondary text-xs")
 
 
 def _create_timestamp_content() -> None:
-    """Create last update timestamp with staleness indication (Story 3.3).
-
-    Format: HH:MM:SS in local timezone.
-    - Normal (<60s): secondary text color
-    - Stale (>60s): amber warning color
-    """
+    """Last update timestamp with staleness indication."""
     timestamp = state.last_update_formatted
-
-    # Amber color if data is stale (>60 seconds old)
-    if state.is_stale:
-        timestamp_class = "timestamp-stale"
-    else:
-        timestamp_class = "timestamp-display"
-
-    ui.label(timestamp).classes(timestamp_class)
+    cls = "timestamp-stale" if state.is_stale else "timestamp-display"
+    ui.label(timestamp).classes(cls)

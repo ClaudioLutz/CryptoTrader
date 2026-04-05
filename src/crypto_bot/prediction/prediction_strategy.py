@@ -49,8 +49,11 @@ class PredictionStrategy:
             train_window_hours=getattr(config, "train_window_hours", 720),
         )
         self._latest_predictions: dict[str, PredictionResult] = {}
+        self._prediction_history: list[dict] = []  # Chronologische Prediction-History
+        self._max_history_entries: int = 168 * 2  # 2 Wochen bei stuendl. Predictions
         self._last_retrain_date: Optional[date] = None
         self._last_retrain_time: Optional[datetime] = None
+        self._last_retrain_duration: Optional[float] = None  # Sekunden
         self._active_orders: dict[str, str] = {}  # order_id -> coin
         self._symbols = [f"{coin}/{config.quote_currency}" for coin in config.coins]
         self._initialized = False
@@ -220,6 +223,10 @@ class PredictionStrategy:
             "last_retrain_date": (
                 self._last_retrain_date.isoformat() if self._last_retrain_date else None
             ),
+            "last_retrain_time": (
+                self._last_retrain_time.isoformat() if self._last_retrain_time else None
+            ),
+            "last_retrain_duration": self._last_retrain_duration,
             "latest_predictions": {
                 coin: {
                     "coin": p.coin,
@@ -230,6 +237,7 @@ class PredictionStrategy:
                 }
                 for coin, p in self._latest_predictions.items()
             },
+            "prediction_history": self._prediction_history,
             "initialized": self._initialized,
         }
 
@@ -245,10 +253,14 @@ class PredictionStrategy:
 
         if state.get("last_retrain_date"):
             strategy._last_retrain_date = date.fromisoformat(state["last_retrain_date"])
+        if state.get("last_retrain_time"):
+            strategy._last_retrain_time = datetime.fromisoformat(state["last_retrain_time"])
+        strategy._last_retrain_duration = state.get("last_retrain_duration")
 
         for coin, pdata in state.get("latest_predictions", {}).items():
             strategy._latest_predictions[coin] = PredictionResult(**pdata)
 
+        strategy._prediction_history = state.get("prediction_history", [])
         strategy._initialized = state.get("initialized", False)
         return strategy
 
@@ -355,20 +367,49 @@ class PredictionStrategy:
 
     async def _run_retrain(self) -> None:
         """Fuehrt die Prediction-Pipeline in einem Background-Thread aus."""
+        import time as _time
+
         async with self._retrain_lock:
             logger.info("prediction_retrain_start",
                         timeframe=getattr(self._config, "timeframe", "1d"))
+            start = _time.monotonic()
             try:
                 self._latest_predictions = await self._pipeline.run_full_pipeline()
                 self._last_retrain_date = date.today()
                 self._last_retrain_time = datetime.now(timezone.utc)
+                self._last_retrain_duration = _time.monotonic() - start
+
+                # Prediction-History speichern
+                self._append_prediction_history()
+
                 logger.info(
                     "prediction_retrain_complete",
                     n_predictions=len(self._latest_predictions),
+                    duration_s=round(self._last_retrain_duration, 1),
                 )
             except Exception:
+                self._last_retrain_duration = _time.monotonic() - start
                 logger.exception("prediction_retrain_failed")
                 # Vorherige Predictions behalten
+
+    def _append_prediction_history(self) -> None:
+        """Speichert aktuelle Predictions in der History-Liste."""
+        now = datetime.now(timezone.utc)
+        for coin, pred in self._latest_predictions.items():
+            self._prediction_history.append({
+                "timestamp": now.isoformat(),
+                "coin": pred.coin,
+                "direction": pred.direction,
+                "probability": round(pred.probability, 4),
+                "confidence": round(pred.confidence, 4),
+                "features_date": pred.features_date,
+                "sl_pct": round(getattr(pred, "sl_pct", 0), 4),
+                "tp_pct": round(getattr(pred, "tp_pct", 0), 4),
+            })
+
+        # History beschraenken
+        if len(self._prediction_history) > self._max_history_entries:
+            self._prediction_history = self._prediction_history[-self._max_history_entries:]
 
     async def _process_predictions(self) -> None:
         """Oeffnet Positionen fuer hochkonfidente 'Up'-Predictions."""

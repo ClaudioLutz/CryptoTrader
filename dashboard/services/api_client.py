@@ -318,6 +318,36 @@ class APIClient:
             logger.error("Traceback: %s", traceback.format_exc())
             raise  # Let circuit breaker count this failure
 
+    _EMPTY_PREDICTION = {"history": [], "model_info": None, "current_prediction": None, "positions": {"open": [], "closed": []}}
+
+    async def get_prediction_history(self, limit: int = 168) -> dict[str, Any]:
+        """Fetch prediction history from /api/prediction-history endpoint.
+
+        Returns:
+            Dict with history, model_info, current_prediction, positions.
+            Returns empty defaults if endpoint not available (old bot version).
+        """
+        try:
+            if not self._client:
+                return dict(self._EMPTY_PREDICTION)
+
+            response = await self._client.get(
+                "/api/prediction-history",
+                params={"limit": limit},
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                # Bot laeuft noch ohne /api/prediction-history Endpunkt
+                logger.debug("Prediction history endpoint not available (404)")
+                return dict(self._EMPTY_PREDICTION)
+            logger.error("Prediction history request failed: %s", e)
+            return dict(self._EMPTY_PREDICTION)
+        except (pybreaker.CircuitBreakerError, httpx.RequestError) as e:
+            logger.debug("Prediction history unavailable: %s", e)
+            return dict(self._EMPTY_PREDICTION)
+
     @exchange_breaker
     async def get_pnl(self, period: str = "daily") -> dict[str, Any]:
         """Fetch P&L summary from /api/pnl endpoint.

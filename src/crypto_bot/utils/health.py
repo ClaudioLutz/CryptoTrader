@@ -227,6 +227,7 @@ class HealthCheckServer:
         self._app.router.add_get("/api/status", self._status_handler)
         self._app.router.add_get("/api/strategies", self._strategies_handler)
         self._app.router.add_get("/api/ohlcv", self._ohlcv_handler)
+        self._app.router.add_get("/api/prediction-history", self._prediction_history_handler)
 
     # Security Middlewares
     @web.middleware
@@ -993,6 +994,97 @@ class HealthCheckServer:
                 {"error": str(e)},
                 status=500,
             )
+
+    async def _prediction_history_handler(self, request: web.Request) -> web.Response:
+        """Get prediction history and model info for dashboard."""
+        if not self._bot:
+            return web.json_response({"error": "Bot not initialized"}, status=503)
+
+        try:
+            # Finde die Prediction-Strategy
+            strategies = []
+            if hasattr(self._bot, "get_all_strategies"):
+                strategies = self._bot.get_all_strategies()
+            elif hasattr(self._bot, "_strategy"):
+                strategies = [self._bot._strategy] if self._bot._strategy else []
+
+            pred_strategy = None
+            for s in strategies:
+                if hasattr(s, "_prediction_history"):
+                    pred_strategy = s
+                    break
+
+            if not pred_strategy:
+                return web.json_response({
+                    "history": [],
+                    "model_info": None,
+                    "current_prediction": None,
+                    "positions": {"open": [], "closed": []},
+                })
+
+            # Limit: nur die letzten N Eintraege (default 168 = 1 Woche)
+            limit = _validate_limit(request.query.get("limit", "168"))
+            history = pred_strategy._prediction_history[-limit:]
+
+            # Model-Info
+            model_info = {
+                "last_retrain_time": (
+                    pred_strategy._last_retrain_time.isoformat()
+                    if pred_strategy._last_retrain_time else None
+                ),
+                "last_retrain_duration": pred_strategy._last_retrain_duration,
+                "retrain_interval_hours": getattr(
+                    pred_strategy._config, "retrain_interval_hours", 0
+                ),
+                "timeframe": getattr(pred_strategy._config, "timeframe", "1d"),
+                "min_confidence": pred_strategy._config.min_confidence,
+                "prediction_horizon_hours": getattr(
+                    pred_strategy._config, "prediction_horizon_hours", 168
+                ),
+                "train_window_hours": getattr(
+                    pred_strategy._config, "train_window_hours", 720
+                ),
+                "coins": pred_strategy._config.coins,
+                "is_retraining": pred_strategy._retraining,
+            }
+
+            # Aktuelle Prediction
+            current = None
+            if pred_strategy._latest_predictions:
+                for coin, p in pred_strategy._latest_predictions.items():
+                    current = {
+                        "coin": p.coin,
+                        "direction": p.direction,
+                        "probability": round(p.probability, 4),
+                        "confidence": round(p.confidence, 4),
+                        "features_date": p.features_date,
+                        "sl_pct": round(getattr(p, "sl_pct", 0), 4),
+                        "tp_pct": round(getattr(p, "tp_pct", 0), 4),
+                    }
+
+            # Positionen (offen + geschlossen)
+            open_positions = []
+            closed_positions = []
+            if hasattr(pred_strategy, "_tracker"):
+                tracker = pred_strategy._tracker
+                for pos in tracker.get_open_positions():
+                    open_positions.append(pos.to_dict())
+                for pos in tracker._closed_positions:
+                    closed_positions.append(pos.to_dict())
+
+            return web.json_response({
+                "history": history,
+                "model_info": model_info,
+                "current_prediction": current,
+                "positions": {
+                    "open": open_positions,
+                    "closed": closed_positions[-50:],  # Letzte 50 geschlossene
+                },
+            })
+
+        except Exception as e:
+            logger.error("prediction_history_api_error", error=str(e))
+            return web.json_response({"error": str(e)}, status=500)
 
     async def _status_handler(self, request: web.Request) -> web.Response:
         """Get comprehensive bot status."""
