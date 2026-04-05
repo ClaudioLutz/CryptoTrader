@@ -27,16 +27,7 @@ from crypto_bot.utils.health import HealthCheckServer
 # Manuelle Positionen registrieren
 # ============================================================================
 
-MANUAL_POSITIONS = [
-    {
-        "coin": "TRX",
-        "entry_price": Decimal("0.3173"),
-        "amount": Decimal("78.6"),
-        "cost": Decimal("24.97"),
-        "opened_at": datetime(2026, 3, 28, 20, 25, 0, tzinfo=timezone.utc),
-        "close_after_days": 6,  # Schliesst am 03.04.2026 ~20:25 UTC
-    },
-]
+MANUAL_POSITIONS = []
 
 
 async def main() -> int:

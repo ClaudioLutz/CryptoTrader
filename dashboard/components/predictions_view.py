@@ -233,9 +233,9 @@ def _create_price_chart(container: ui.column) -> None:
                 row=2, col=1,
             )
 
-        # Trade-Marker auf dem Preischart
-        open_positions = state.open_positions
-        closed_positions = state.closed_positions
+        # Trade-Marker auf dem Preischart (nur BTC-Positionen)
+        open_positions = [p for p in state.open_positions if p.get("coin") == "BTC"]
+        closed_positions = [p for p in state.closed_positions if p.get("coin") == "BTC"]
 
         # Entries (gruen)
         entry_ts = []
@@ -312,13 +312,25 @@ def _create_price_chart(container: ui.column) -> None:
                     row=1, col=1,
                 )
 
+        # Y-Achse auf tatsaechlichen Preisbereich skalieren (mit 2% Padding)
+        y_range = None
+        if ohlcv:
+            all_lows = [c["low"] for c in ohlcv]
+            all_highs = [c["high"] for c in ohlcv]
+            price_min = min(all_lows)
+            price_max = max(all_highs)
+            padding = (price_max - price_min) * 0.15  # 15% Padding
+            if padding < price_max * 0.01:  # Mindestens 1% des Preises
+                padding = price_max * 0.01
+            y_range = [price_min - padding, price_max + padding]
+
         # Layout
         fig.update_layout(
             template="plotly_dark",
             paper_bgcolor="#1a1a2e",
             plot_bgcolor="#1a1a2e",
             height=600,
-            margin=dict(l=50, r=20, t=40, b=30),
+            margin=dict(l=60, r=20, t=40, b=30),
             hovermode="x unified",
             showlegend=True,
             legend=dict(
@@ -326,7 +338,11 @@ def _create_price_chart(container: ui.column) -> None:
                 xanchor="right", x=1, font=dict(size=10),
             ),
             xaxis2=dict(gridcolor="#0f3460"),
-            yaxis=dict(title="Preis ($)", gridcolor="#0f3460"),
+            yaxis=dict(
+                title="Preis ($)", gridcolor="#0f3460",
+                range=y_range,
+                tickformat=",.0f",
+            ),
             yaxis2=dict(title="Confidence", gridcolor="#0f3460", range=[0.4, 1.0]),
         )
         fig.update_xaxes(rangeslider_visible=False)
