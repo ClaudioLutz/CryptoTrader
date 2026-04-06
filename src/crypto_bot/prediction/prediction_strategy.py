@@ -16,7 +16,9 @@ import structlog
 from crypto_bot.exchange.base_exchange import Order, OrderSide, Ticker
 from crypto_bot.prediction.position_tracker import PositionTracker, PredictionPosition
 from crypto_bot.prediction.prediction_config import PredictionConfig
+from crypto_bot.prediction.prediction_journal import PredictionJournal
 from crypto_bot.prediction.prediction_pipeline import PredictionPipeline, PredictionResult
+from crypto_bot.risk.position_sizer import KellySizer
 from crypto_bot.strategies.base_strategy import ExecutionContext
 
 logger = structlog.get_logger(__name__)
@@ -47,6 +49,9 @@ class PredictionStrategy:
             timeframe=getattr(config, "timeframe", "1d"),
             horizon_hours=getattr(config, "prediction_horizon_hours", 0),
             train_window_hours=getattr(config, "train_window_hours", 720),
+            optuna_enabled=getattr(config, "optuna_enabled", False),
+            optuna_n_trials=getattr(config, "optuna_n_trials", 30),
+            optuna_timeout=getattr(config, "optuna_timeout_seconds", 300),
         )
         self._latest_predictions: dict[str, PredictionResult] = {}
         self._prediction_history: list[dict] = []  # Chronologische Prediction-History
@@ -59,6 +64,21 @@ class PredictionStrategy:
         self._initialized = False
         self._retrain_lock = asyncio.Lock()
         self._retraining = False
+
+        # D1: Kelly Criterion
+        self._kelly_sizer: Optional[KellySizer] = None
+        if config.kelly_enabled:
+            self._kelly_sizer = KellySizer(fraction=Decimal(str(config.kelly_fraction)))
+
+        # D4: Drawdown Protection — Peak-Kapital tracken
+        self._peak_capital: Decimal = Decimal(0)
+        self._current_drawdown_pct: float = 0.0
+
+        # F2: Prediction Journal
+        self._journal = PredictionJournal()
+
+        # E1: Telegram Notifier (lazy init)
+        self._notifier: Optional[Any] = None
 
     @property
     def name(self) -> str:
@@ -86,6 +106,23 @@ class PredictionStrategy:
         if self._config.total_capital <= Decimal(0):
             await self._update_capital_from_balance()
 
+        # D4: Peak-Capital initialisieren
+        if self._peak_capital <= 0:
+            self._peak_capital = self._config.total_capital
+        self._update_drawdown()
+
+        # E1: Telegram Notifier initialisieren
+        if self._config.telegram_enabled and not self._notifier:
+            try:
+                from crypto_bot.notifications.telegram import TelegramNotifier
+                self._notifier = TelegramNotifier(
+                    bot_token=self._config.telegram_bot_token,
+                    chat_id=self._config.telegram_chat_id,
+                )
+                logger.info("telegram_notifier_initialized")
+            except Exception:
+                logger.warning("telegram_notifier_init_failed", exc_info=True)
+
         if not self._initialized:
             logger.info("prediction_strategy_initializing", coins=len(self._config.coins))
             await self._run_retrain()
@@ -95,6 +132,9 @@ class PredictionStrategy:
                 "prediction_strategy_initialized",
                 predictions=len(self._latest_predictions),
                 open_positions=len(self._tracker.get_open_positions()),
+                kelly_enabled=self._config.kelly_enabled,
+                drawdown_protection=self._config.drawdown_protection_enabled,
+                telegram_enabled=self._config.telegram_enabled,
             )
         else:
             # Aus State wiederhergestellt — nur abgelaufene Positionen pruefen
@@ -122,6 +162,9 @@ class PredictionStrategy:
             return
 
         now = datetime.now(timezone.utc)
+
+        # 0. Drawdown aktualisieren (D4)
+        self._update_drawdown()
 
         # 1. TP pruefen (Bot-Level) + SL-Fallback fuer Positionen ohne Binance-SL
         #    SL wird auf Binance-Ebene geprueft (via SL-Order), TP bleibt Bot-Level
@@ -161,7 +204,11 @@ class PredictionStrategy:
         for pos in positions_to_close:
             await self._close_position(pos, reason="time")
 
-        # 3. Taegl. Retrain
+        # 3. Daily Summary via Telegram (18:00 UTC)
+        if self._notifier and now.hour == 18 and now.minute == 0:
+            await self._send_daily_summary()
+
+        # 4. Taegl. Retrain
         if self._should_retrain(now) and not self._retraining:
             self._retraining = True
             try:
@@ -199,6 +246,13 @@ class PredictionStrategy:
                 close_price=str(close_price),
                 filled=str(order.filled),
             )
+
+            # E1: Telegram-Notification bei Verkauf
+            if pos.pnl is not None:
+                await self._notify_trade(
+                    "SELL", coin, order.filled, close_price, pos.cost,
+                    pnl=pos.pnl, reason=reason,
+                )
         elif order.side == OrderSide.BUY:
             logger.info(
                 "prediction_buy_filled",
@@ -239,6 +293,8 @@ class PredictionStrategy:
             },
             "prediction_history": self._prediction_history,
             "initialized": self._initialized,
+            "peak_capital": str(self._peak_capital),
+            "current_drawdown_pct": self._current_drawdown_pct,
         }
 
     @classmethod
@@ -262,6 +318,8 @@ class PredictionStrategy:
 
         strategy._prediction_history = state.get("prediction_history", [])
         strategy._initialized = state.get("initialized", False)
+        strategy._peak_capital = Decimal(state.get("peak_capital", "0"))
+        strategy._current_drawdown_pct = state.get("current_drawdown_pct", 0.0)
         return strategy
 
     async def shutdown(self) -> None:
@@ -393,7 +451,7 @@ class PredictionStrategy:
                 # Vorherige Predictions behalten
 
     def _append_prediction_history(self) -> None:
-        """Speichert aktuelle Predictions in der History-Liste."""
+        """Speichert aktuelle Predictions in der History-Liste und im Journal (F2)."""
         now = datetime.now(timezone.utc)
         for coin, pred in self._latest_predictions.items():
             self._prediction_history.append({
@@ -406,6 +464,22 @@ class PredictionStrategy:
                 "sl_pct": round(getattr(pred, "sl_pct", 0), 4),
                 "tp_pct": round(getattr(pred, "tp_pct", 0), 4),
             })
+
+            # F2: Prediction Journaling
+            try:
+                optuna_params = None
+                if hasattr(self._pipeline, "_best_params"):
+                    optuna_params = self._pipeline._best_params
+                self._journal.log_prediction(
+                    coin=pred.coin,
+                    timeframe=getattr(self._config, "timeframe", "1h"),
+                    prediction=pred.direction,
+                    confidence=pred.confidence,
+                    probability=pred.probability,
+                    optuna_params=optuna_params,
+                )
+            except Exception:
+                logger.warning("journal_log_failed", coin=pred.coin)
 
         # History beschraenken
         if len(self._prediction_history) > self._max_history_entries:
@@ -516,24 +590,74 @@ class PredictionStrategy:
                     tp_pct=f"{pred.tp_pct:.1%}" if pred.tp_pct > 0 else "disabled",
                 )
 
+                # E1: Telegram-Notification bei Kauf
+                await self._notify_trade(
+                    "BUY", pred.coin, amount, price, position_size,
+                    confidence=pred.confidence,
+                )
+
             except Exception:
                 logger.exception("position_open_failed", coin=pred.coin)
 
     def _calculate_position_size(
         self, pred: PredictionResult, available: Decimal
     ) -> Decimal:
-        """Berechnet die Positionsgroesse basierend auf Confidence und ATR.
+        """Berechnet die Positionsgroesse mit Kelly, Drawdown-Schutz und Confidence.
 
-        Zwei Faktoren bestimmen die Groesse:
-        1. Confidence [min_confidence, 1.0] → [25%, 100%] (wie sicher ist das Signal?)
-        2. ATR-Faktor [0.5, 1.5] (wie gross ist die erwartete Bewegung?)
+        Drei Stufen:
+        1. Kelly Criterion bestimmt die maximale Groesse (basierend auf Trade-History)
+        2. Drawdown Protection reduziert bei Verlusten progressiv
+        3. Confidence [min_confidence, 1.0] skaliert innerhalb des Kelly-Rahmens
 
-        Coins mit hoher Confidence UND hoher Volatilitaet bekommen
-        groessere Positionen, weil das Gewinnpotenzial hoeher ist.
+        Fallback auf die bisherige Methode wenn Kelly nicht genug Daten hat.
         """
         max_per_coin = self._config.total_capital * self._config.max_per_coin_pct
 
-        # Faktor 1: Confidence-basiert (wie bisher)
+        # === Stufe 1: Kelly Criterion (D1) ===
+        kelly_scale = 1.0
+        if self._kelly_sizer and self._config.kelly_enabled:
+            stats = self._get_trade_stats()
+            if stats:
+                win_rate, avg_win, avg_loss = stats
+                kelly_pct = self._kelly_sizer.calculate_kelly(
+                    win_rate=Decimal(str(win_rate)),
+                    avg_win=Decimal(str(avg_win)),
+                    avg_loss=Decimal(str(avg_loss)),
+                )
+                if kelly_pct > 0:
+                    # Kelly als Anteil des max_per_coin_pct normalisieren
+                    kelly_scale = min(float(kelly_pct / self._config.max_per_coin_pct), 1.0)
+                    logger.debug(
+                        "kelly_applied",
+                        kelly_pct=f"{kelly_pct:.2%}",
+                        kelly_scale=round(kelly_scale, 3),
+                        win_rate=round(win_rate, 3),
+                        avg_win=round(avg_win, 4),
+                        avg_loss=round(avg_loss, 4),
+                    )
+                else:
+                    # Kelly sagt: kein Edge → minimale Position
+                    kelly_scale = 0.25
+                    logger.info("kelly_no_edge", kelly_pct=str(kelly_pct))
+
+        # === Stufe 2: Drawdown Protection (D4) ===
+        drawdown_scale = 1.0
+        if self._config.drawdown_protection_enabled and self._current_drawdown_pct > self._config.drawdown_threshold_pct:
+            # Lineare Reduktion: bei threshold → 100%, bei 3x threshold → max_reduction
+            dd_range = self._config.drawdown_threshold_pct * 2  # z.B. 5% bis 15%
+            dd_excess = self._current_drawdown_pct - self._config.drawdown_threshold_pct
+            reduction = min(dd_excess / dd_range, 1.0)
+            drawdown_scale = max(
+                1.0 - reduction * (1.0 - self._config.drawdown_max_reduction),
+                self._config.drawdown_max_reduction,
+            )
+            logger.info(
+                "drawdown_protection_active",
+                drawdown_pct=f"{self._current_drawdown_pct:.1%}",
+                drawdown_scale=round(drawdown_scale, 3),
+            )
+
+        # === Stufe 3: Confidence-Skalierung (wie bisher) ===
         confidence_range = 1.0 - self._config.min_confidence
         if confidence_range <= 0:
             confidence_scale = 1.0
@@ -542,20 +666,13 @@ class PredictionStrategy:
             confidence_scale = 0.25 + 0.75 * (confidence_above_min / confidence_range)
             confidence_scale = min(confidence_scale, 1.0)
 
-        # Faktor 2: Quantil-basiert oder ATR-Fallback
-        # Wenn Quantil-Daten verfuegbar: q50 (erwarteter Return) bestimmt Groesse
-        # Wenn q10 > 0: Selbst im schlechten Fall positiv → Bonus
+        # Quantil/ATR-Faktor
         if hasattr(pred, "q50") and pred.q50 != 0:
-            # Erwarteter Return: 0% → 0.5x, 5% → 1.0x, 10%+ → 1.5x
             q50_scale = max(0.5, min(0.5 + pred.q50 * 10, 1.5))
-
-            # Bonus wenn q10 > 0 (Downside-geschuetzt)
             if hasattr(pred, "q10") and pred.q10 > 0:
                 q50_scale = min(q50_scale * 1.2, 1.5)
-
             move_scale = q50_scale
         else:
-            # Fallback: ATR-basiert
             median_tp = 0.15
             if pred.tp_pct > 0:
                 atr_ratio = pred.tp_pct / median_tp
@@ -563,9 +680,100 @@ class PredictionStrategy:
             else:
                 move_scale = 1.0
 
-        combined_scale = Decimal(str(min(confidence_scale * move_scale, 1.5)))
+        # === Kombinieren: Kelly × Drawdown × Confidence ===
+        combined = kelly_scale * drawdown_scale * min(confidence_scale * move_scale, 1.5)
+        combined_scale = Decimal(str(min(combined, 1.5)))
         size = (max_per_coin * combined_scale).quantize(Decimal("0.01"))
         return min(size, available)
+
+    def _get_trade_stats(self) -> Optional[tuple[float, float, float]]:
+        """Berechnet Win-Rate, avg_win, avg_loss aus geschlossenen Positionen.
+
+        Returns:
+            (win_rate, avg_win_pct, avg_loss_pct) oder None wenn zu wenig Trades.
+        """
+        closed = self._tracker._closed_positions
+        lookback = self._config.kelly_lookback_trades
+        recent = closed[-lookback:] if len(closed) > lookback else closed
+
+        if len(recent) < self._config.kelly_min_trades:
+            return None
+
+        wins = []
+        losses = []
+        for pos in recent:
+            if pos.pnl is None or pos.cost == 0:
+                continue
+            pnl_pct = float(pos.pnl / pos.cost)
+            if pnl_pct > 0:
+                wins.append(pnl_pct)
+            else:
+                losses.append(abs(pnl_pct))
+
+        if not wins or not losses:
+            return None
+
+        win_rate = len(wins) / (len(wins) + len(losses))
+        avg_win = sum(wins) / len(wins)
+        avg_loss = sum(losses) / len(losses)
+
+        return win_rate, avg_win, avg_loss
+
+    def _update_drawdown(self) -> None:
+        """Aktualisiert den Drawdown basierend auf aktuellem Kapital."""
+        current = self._config.total_capital + self._tracker.get_total_pnl()
+        if current > self._peak_capital:
+            self._peak_capital = current
+        if self._peak_capital > 0:
+            self._current_drawdown_pct = float(
+                (self._peak_capital - current) / self._peak_capital
+            )
+
+    async def _send_daily_summary(self) -> None:
+        """Sendet eine taegliche Zusammenfassung via Telegram."""
+        if not self._notifier:
+            return
+        try:
+            stats = self._get_trade_stats()
+            win_rate = stats[0] if stats else None
+            kelly_pct = None
+            if stats and self._kelly_sizer:
+                kp = self._kelly_sizer.calculate_kelly(
+                    Decimal(str(stats[0])), Decimal(str(stats[1])), Decimal(str(stats[2]))
+                )
+                kelly_pct = float(kp)
+            await self._notifier.send_daily_summary(
+                total_capital=self._config.total_capital,
+                open_positions=len(self._tracker.get_open_positions()),
+                total_pnl=self._tracker.get_total_pnl(),
+                drawdown_pct=self._current_drawdown_pct,
+                win_rate=win_rate,
+                kelly_pct=kelly_pct,
+            )
+        except Exception:
+            logger.warning("daily_summary_failed", exc_info=True)
+
+    async def _notify_trade(
+        self,
+        side: str,
+        coin: str,
+        amount: Decimal,
+        price: Decimal,
+        cost: Decimal,
+        confidence: float = 0.0,
+        pnl: Optional[Decimal] = None,
+        reason: str = "",
+    ) -> None:
+        """Sendet Trade-Notification via Telegram (E1)."""
+        if not self._notifier:
+            return
+        try:
+            await self._notifier.send_trade(
+                side=side, coin=coin, amount=amount, price=price,
+                cost=cost, confidence=confidence, pnl=pnl, reason=reason,
+            )
+        except Exception:
+            logger.warning("telegram_notification_failed", coin=coin, side=side)
 
     async def _close_position(self, pos: PredictionPosition, reason: str = "time") -> None:
         """Schliesst eine Position via Market Sell.

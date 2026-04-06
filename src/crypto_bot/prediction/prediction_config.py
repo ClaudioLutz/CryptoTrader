@@ -47,6 +47,28 @@ class PredictionConfig(StrategyConfig):
         ),
     )
 
+    # D1: Kelly Criterion — Position Sizing
+    kelly_enabled: bool = Field(default=True)
+    kelly_fraction: float = Field(default=0.25, ge=0.1, le=1.0)  # Quarter-Kelly
+    kelly_min_trades: int = Field(default=20, ge=5)  # Min. Trades fuer stabile Schaetzung
+    kelly_lookback_trades: int = Field(default=50, ge=10)  # Rolling-Window
+
+    # D4: Drawdown Protection — Progressive Positionsreduktion
+    drawdown_protection_enabled: bool = Field(default=True)
+    drawdown_threshold_pct: float = Field(default=0.05, ge=0.01, le=0.50)  # Ab 5% Drawdown aktiv
+    drawdown_max_reduction: float = Field(default=0.25, ge=0.10, le=0.90)  # Min. 25% der normalen Groesse
+
+    # B8: Optuna Hyperparameter-Tuning
+    optuna_enabled: bool = Field(default=True)
+    optuna_n_trials: int = Field(default=30, ge=5, le=200)
+    optuna_timeout_seconds: int = Field(default=300, ge=60, le=1800)  # 5 Min default
+    optuna_retune_interval_hours: int = Field(default=24, ge=1)  # Nur 1x taeglich tunen
+
+    # E1: Telegram Notifications
+    telegram_enabled: bool = Field(default=False)
+    telegram_bot_token: str = Field(default="")
+    telegram_chat_id: str = Field(default="")
+
     # Abwaertskompatibilitaet
     @property
     def prediction_horizon_days(self) -> int:

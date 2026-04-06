@@ -29,7 +29,7 @@ COPY dashboard/ dashboard/
 
 # Install CryptoTrader dependencies
 RUN pip install --upgrade pip setuptools wheel && \
-    pip install -e ".[dashboard]"
+    pip install -e ".[dashboard,prediction]"
 
 # Copy coin_prediction source and install its dependencies
 COPY coin_prediction_src/ /app/coin_prediction/

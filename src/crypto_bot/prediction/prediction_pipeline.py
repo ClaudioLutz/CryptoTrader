@@ -54,6 +54,9 @@ class PredictionPipeline:
         timeframe: str = "1d",
         horizon_hours: int = 0,
         train_window_hours: int = 720,
+        optuna_enabled: bool = False,
+        optuna_n_trials: int = 30,
+        optuna_timeout: int = 300,
     ) -> None:
         self._path = Path(coin_prediction_path)
         self._coins = coins
@@ -62,6 +65,10 @@ class PredictionPipeline:
         self._horizon_hours = horizon_hours or (horizon_days * 24)
         self._train_window_hours = train_window_hours
         self._modules_loaded = False
+        self._optuna_enabled = optuna_enabled
+        self._optuna_n_trials = optuna_n_trials
+        self._optuna_timeout = optuna_timeout
+        self._best_params: dict | None = None  # Gecachte Optuna-Params
 
     def _ensure_imports(self) -> None:
         """Fuegt coin_prediction zum sys.path hinzu und importiert Module."""
@@ -105,6 +112,27 @@ class PredictionPipeline:
         self._fetch_all_funding_rates = fetch_all_funding_rates
         self._fetch_derivatives = fetch_and_save_derivatives
 
+        # B8: Optuna Tuner (optional)
+        if self._optuna_enabled:
+            try:
+                from src.models.optuna_tuner import tune_and_train
+                self._tune_and_train = tune_and_train
+                logger.info("optuna_tuner_loaded")
+            except ImportError:
+                logger.warning("optuna_not_available_falling_back_to_default")
+                self._optuna_enabled = False
+
+        # C6+C11: Macro/Cross-Market Fetcher
+        try:
+            from src.ingestion.macro_fetcher import build_macro_features, fetch_macro_data
+            self._fetch_macro_data = fetch_macro_data
+            self._build_macro_features = build_macro_features
+            logger.info("macro_fetcher_loaded")
+        except ImportError:
+            self._fetch_macro_data = None
+            self._build_macro_features = None
+            logger.warning("macro_fetcher_not_available")
+
         self._modules_loaded = True
         logger.info("coin_prediction_modules_loaded", path=path_str)
 
@@ -141,6 +169,13 @@ class PredictionPipeline:
                 self._fetch_derivatives(self._coins)
             except Exception:
                 logger.warning("derivatives_fetch_failed")
+
+            # C6+C11: Macro/Cross-Market Daten laden
+            if self._fetch_macro_data:
+                try:
+                    self._fetch_macro_data(data_dir, period="90d", interval="1h")
+                except Exception:
+                    logger.warning("macro_data_fetch_failed", exc_info=True)
 
             # 2. Bei 1h: Features inline berechnen (kein Umweg ueber Feature-Pipeline)
             #    Bei 1d: Features ueber coin_prediction Feature-Pipeline
@@ -261,8 +296,15 @@ class PredictionPipeline:
         X_val = X.iloc[split_idx:]
         y_val = y.iloc[split_idx:]
 
-        # Modell trainieren
-        model = self._train_lightgbm(X_train, y_train, X_val, y_val, seed=seed)
+        # Modell trainieren (mit oder ohne Optuna)
+        if self._optuna_enabled:
+            model, self._best_params = self._tune_and_train(
+                X_train, y_train, X_val, y_val,
+                seed=seed, n_trials=self._optuna_n_trials,
+                timeout=self._optuna_timeout,
+            )
+        else:
+            model = self._train_lightgbm(X_train, y_train, X_val, y_val, seed=seed)
 
         # Prediction
         preds, proba = self._predict_with_confidence(model, latest_features)
@@ -411,6 +453,17 @@ class PredictionPipeline:
             except Exception:
                 pass
 
+        # C6+C11: Macro/Cross-Market Features (DXY, VIX, MSTR, Gold, SPY)
+        if self._build_macro_features:
+            try:
+                macro_features = self._build_macro_features(close, data_dir, interval="1h")
+                if not macro_features.empty:
+                    # Nur Spalten uebernehmen die auch Daten haben
+                    valid_cols = macro_features.columns[macro_features.notna().any()]
+                    features = pd.concat([features, macro_features[valid_cols]], axis=1)
+            except Exception:
+                logger.warning("macro_features_build_failed", coin=coin)
+
         return features
 
     def _train_and_predict_1h(
@@ -470,8 +523,15 @@ class PredictionPipeline:
         X_train, y_train = X.iloc[:split_idx], y.iloc[:split_idx]
         X_val, y_val = X.iloc[split_idx:], y.iloc[split_idx:]
 
-        # LightGBM trainieren
-        model = self._train_lightgbm(X_train, y_train, X_val, y_val, seed=seed)
+        # LightGBM trainieren (mit oder ohne Optuna)
+        if self._optuna_enabled:
+            model, self._best_params = self._tune_and_train(
+                X_train, y_train, X_val, y_val,
+                seed=seed, n_trials=self._optuna_n_trials,
+                timeout=self._optuna_timeout,
+            )
+        else:
+            model = self._train_lightgbm(X_train, y_train, X_val, y_val, seed=seed)
 
         # Prediction
         preds, proba = self._predict_with_confidence(model, latest_features)

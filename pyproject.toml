@@ -53,6 +53,10 @@ dev = [
 secrets = [
     "keyring>=24.0.0",
 ]
+prediction = [
+    "optuna>=3.6.0",
+    "yfinance>=0.2.36",
+]
 backtesting = [
     "pandas>=2.0.0",
     "numpy>=1.24.0",

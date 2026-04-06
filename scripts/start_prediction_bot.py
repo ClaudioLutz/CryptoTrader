@@ -51,12 +51,19 @@ async def main() -> int:
         database = Database(settings.database)
 
         # Prediction-Strategie erstellen
+        import os
         config = PredictionConfig(
             name="prediction",
             symbol="MULTI/USDT",
             coins=list(DEFAULT_PREDICTION_COINS),
             total_capital=Decimal("0"),  # Dynamisch aus USDT-Balance
             dry_run=settings.trading.dry_run,
+            # E1: Telegram (aus .env)
+            telegram_enabled=bool(os.environ.get("TELEGRAM__BOT_TOKEN")),
+            telegram_bot_token=os.environ.get("TELEGRAM__BOT_TOKEN", ""),
+            telegram_chat_id=os.environ.get("TELEGRAM__CHAT_ID", ""),
+            # B8: Optuna (standardmaessig aktiviert)
+            optuna_enabled=os.environ.get("OPTUNA_ENABLED", "true").lower() == "true",
         )
         strategy = PredictionStrategy(config)
 
