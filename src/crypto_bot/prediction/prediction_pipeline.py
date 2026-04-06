@@ -481,15 +481,12 @@ class PredictionPipeline:
 
         features_date = str(latest_features.index[0])
 
-        # ATR fuer SL/TP (auf 1h-Basis, 14 Perioden = 14 Stunden)
+        # Kein SL/TP — Backtests zeigen: Zeitbarriere (72h) reicht als Risikomanagement.
+        # SL/TP zerstoert den schwachen ML-Edge (vgl. Story 20260406150000).
         atr = self._calculate_atr(ohlcv, period=14)
         last_close = float(close.iloc[-1])
-        if last_close > 0 and atr > 0:
-            sl_pct = min((2.0 * atr) / last_close, 0.10)  # Max 10% (kuerzer bei 1h)
-            tp_pct = min((2.0 * atr) / last_close, 0.10)
-        else:
-            sl_pct = 0.05
-            tp_pct = 0.05
+        sl_pct = 0.0
+        tp_pct = 0.0
 
         logger.info(
             "coin_predicted_1h",

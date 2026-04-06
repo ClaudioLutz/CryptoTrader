@@ -470,9 +470,15 @@ class PredictionStrategy:
                 )
 
                 now = datetime.now(timezone.utc)
-                # SL/TP berechnen (ATR-basiert aus Pipeline)
-                sl_price = (price * (1 - Decimal(str(pred.sl_pct)))).quantize(Decimal("0.00000001"))
-                tp_price = (price * (1 + Decimal(str(pred.tp_pct)))).quantize(Decimal("0.00000001"))
+                # SL/TP nur setzen wenn Pipeline Werte > 0 liefert
+                sl_price = (
+                    (price * (1 - Decimal(str(pred.sl_pct)))).quantize(Decimal("0.00000001"))
+                    if pred.sl_pct > 0 else None
+                )
+                tp_price = (
+                    (price * (1 + Decimal(str(pred.tp_pct)))).quantize(Decimal("0.00000001"))
+                    if pred.tp_pct > 0 else None
+                )
 
                 position = PredictionPosition(
                     coin=pred.coin,
@@ -504,12 +510,10 @@ class PredictionStrategy:
                     size_usdt=str(position_size),
                     amount=str(amount),
                     price=str(price),
-                    sl=str(sl_price),
-                    tp=str(tp_price),
-                    sl_pct=f"{pred.sl_pct:.1%}",
-                    tp_pct=f"{pred.tp_pct:.1%}",
-                    sl_order=position.sl_order_id or "fallback",
-                    tp_order=position.tp_order_id or "fallback",
+                    sl=str(sl_price) if sl_price else "disabled",
+                    tp=str(tp_price) if tp_price else "disabled",
+                    sl_pct=f"{pred.sl_pct:.1%}" if pred.sl_pct > 0 else "disabled",
+                    tp_pct=f"{pred.tp_pct:.1%}" if pred.tp_pct > 0 else "disabled",
                 )
 
             except Exception:
