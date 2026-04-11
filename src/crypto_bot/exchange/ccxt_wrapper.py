@@ -88,6 +88,10 @@ class CCXTExchange(BaseExchange):
                         "adjustForTimeDifference": True,
                         # Increase receive window tolerance (max 60000ms)
                         "recvWindow": 60000,
+                        # fetch_currencies() braucht Withdraw-Rechte die wir bewusst
+                        # nicht aktiviert haben. Ohne dieses Flag schlaegt load_markets()
+                        # mit "Invalid Api-Key ID" fehl, obwohl der Key gueltig ist.
+                        "fetchCurrencies": False,
                     },
                 }
             )
