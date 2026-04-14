@@ -458,11 +458,20 @@ class PredictionPipeline:
             try:
                 macro_features = self._build_macro_features(close, data_dir, interval="1h")
                 if not macro_features.empty:
-                    # Nur Spalten uebernehmen die auch Daten haben
+                    # Timezone-Alignment: OHLCV kann tz-aware (UTC) sein,
+                    # Macro-Features sind tz-naive → vor concat angleichen
+                    if (hasattr(features.index, "tz") and features.index.tz is not None
+                            and (not hasattr(macro_features.index, "tz")
+                                 or macro_features.index.tz is None)):
+                        macro_features.index = macro_features.index.tz_localize("UTC")
+                    elif (hasattr(macro_features.index, "tz") and macro_features.index.tz is not None
+                            and (not hasattr(features.index, "tz")
+                                 or features.index.tz is None)):
+                        macro_features.index = macro_features.index.tz_localize(None)
                     valid_cols = macro_features.columns[macro_features.notna().any()]
                     features = pd.concat([features, macro_features[valid_cols]], axis=1)
             except Exception:
-                logger.warning("macro_features_build_failed", coin=coin)
+                logger.warning("macro_features_build_failed", coin=coin, exc_info=True)
 
         return features
 
