@@ -407,6 +407,11 @@ class TradingBot:
         state_store = DatabaseStateStore(self._database.session)
         self._state_manager = StateManager(state_store)
 
+        # Load persisted state into strategy object BEFORE trading starts.
+        # Previously only the reconciler saw the state — the strategy itself
+        # stayed empty, causing duplicate positions after every restart.
+        await self._restore_strategy_state()
+
         # Reconcile state with exchange
         await self._reconcile_state(state_store)
 
@@ -436,6 +441,43 @@ class TradingBot:
         self._running = True
         self._logger.info("bot_started")
         await self._run_loop()
+
+    async def _restore_strategy_state(self) -> None:
+        """Load persisted state from DB into the live strategy object.
+
+        Without this call the bot opens a fresh position on every restart
+        because the strategy instance was constructed with default values
+        while the real state still lived in the DB.
+        """
+        if not self._state_manager:
+            return
+        if not hasattr(self._strategy.__class__, "from_state"):
+            self._logger.debug("strategy_not_restorable")
+            return
+        try:
+            persisted = await self._state_manager.load_strategy_state(
+                self._strategy.name
+            )
+        except Exception as e:
+            self._logger.error("state_load_failed", error=str(e))
+            return
+        if not persisted:
+            self._logger.info("no_persisted_state_on_disk")
+            return
+        try:
+            restored = self._strategy.__class__.from_state(persisted, None)
+            self._strategy = restored
+            self._logger.bind(strategy=self._strategy.name)
+            self._logger.info(
+                "strategy_state_restored",
+                strategy=self._strategy.name,
+                initialized=persisted.get("initialized", False),
+            )
+        except Exception as e:
+            self._logger.error(
+                "strategy_state_restore_failed",
+                error=str(e),
+            )
 
     async def _reconcile_state(self, state_store) -> None:
         """Reconcile strategy state with exchange on startup.
